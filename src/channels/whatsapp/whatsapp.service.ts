@@ -1,12 +1,19 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { AgentService } from '../../agent/agent.service';
 import { AgentInput } from '../../agent/contracts/agent-input';
+import { AgentContext } from '../../agent/contracts/agent-context';
+import { AgentChannelRepository } from '../../database/repositories/agent-channel.repository';
+import { AgentRepository } from '../../database/repositories/agent.repository';
 
 const VERIFY_TOKEN = 'test-token';
 
 @Injectable()
 export class WhatsappService {
-  constructor(private readonly agentService: AgentService) {}
+  constructor(
+    private readonly agentService: AgentService,
+    private readonly agentChannelRepository: AgentChannelRepository,
+    private readonly agentRepository: AgentRepository,
+  ) {}
 
   verifyWebhook(mode: string, token: string, challenge: string): string {
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
@@ -29,7 +36,28 @@ export class WhatsappService {
       return;
     }
 
-    const phoneNumberId = value.metadata?.phone_number_id ?? 'unknown';
+    const phoneNumberId = value.metadata?.phone_number_id;
+
+    const agentChannel =
+      await this.agentChannelRepository.findByPhoneNumberId(phoneNumberId);
+
+    if (!agentChannel) {
+      console.warn(
+        `[WhatsApp] No agent_channel found for phoneNumberId=${phoneNumberId}`,
+      );
+      return;
+    }
+
+    const agent = await this.agentRepository.findById(agentChannel.agentId);
+
+    const context: AgentContext = {
+      agentId: agentChannel.agentId,
+      clientId: agentChannel.clientId,
+      channelType: agentChannel.channelType,
+      systemPrompt: agent?.systemPrompt ?? '',
+      llmConfig: agentChannel.llmConfig,
+      channelConfig: agentChannel.channelConfig,
+    };
 
     const input: AgentInput = {
       channel: 'whatsapp',
@@ -45,7 +73,7 @@ export class WhatsappService {
       },
     };
 
-    const output = await this.agentService.run(input);
+    const output = await this.agentService.run(input, context);
 
     if (output.reply) {
       console.log(
