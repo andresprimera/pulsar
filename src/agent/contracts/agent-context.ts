@@ -4,7 +4,7 @@ export interface AgentContext {
   channelType: string;
   systemPrompt: string;
   llmConfig: {
-    provider: string;
+    provider: 'openai' | 'anthropic';
     apiKey: string;
     model: string;
   };

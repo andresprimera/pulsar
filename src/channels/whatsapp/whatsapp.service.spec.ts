@@ -101,7 +101,7 @@ describe('WhatsappService', () => {
         webhookVerifyToken: 'test-token',
       },
       llmConfig: {
-        provider: 'openai',
+        provider: 'openai' as const,
         apiKey: 'sk-mock-key',
         model: 'gpt-4',
       },

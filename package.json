@@ -21,9 +21,12 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.34",
+    "@ai-sdk/openai": "^3.0.24",
     "@nestjs/common": "^9.0.0",
     "@nestjs/core": "^9.0.0",
     "@nestjs/platform-express": "^9.0.0",
+    "ai": "^6.0.66",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.2.0"
   },

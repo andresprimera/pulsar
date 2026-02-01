@@ -10,7 +10,7 @@ export interface AgentChannel {
     webhookVerifyToken: string;
   };
   llmConfig: {
-    provider: string;
+    provider: 'openai' | 'anthropic';
     apiKey: string;
     model: string;
   };

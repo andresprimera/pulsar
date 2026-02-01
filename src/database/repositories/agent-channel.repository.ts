@@ -15,8 +15,8 @@ const MOCK_DATA: AgentChannel[] = [
     },
     llmConfig: {
       provider: 'openai',
-      apiKey: 'sk-mock-key',
-      model: 'gpt-4',
+      apiKey: process.env.OPENAI_API_KEY || 'sk-mock-key',
+      model: 'gpt-4o-mini',
     },
   },
 ];
