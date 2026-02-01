@@ -4,6 +4,8 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
+import { Types } from 'mongoose';
+import { User } from '../database/schemas/user.schema';
 import { UserRepository } from '../database/repositories/user.repository';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -25,6 +27,7 @@ export class UsersService {
       ...dto,
       email,
       status: 'active',
+      clientId: new Types.ObjectId(dto.clientId),
     });
   }
 
@@ -50,7 +53,15 @@ export class UsersService {
       throw new BadRequestException('Archived users cannot be modified');
     }
 
-    const updates: Partial<CreateUserDto> = { ...dto };
+    if ((dto as any).clientId) {
+      throw new BadRequestException('clientId cannot be updated');
+    }
+
+    const updates: Partial<User> = {};
+
+    if (dto.name) {
+      updates.name = dto.name;
+    }
     
     if (dto.email) {
       const email = dto.email.toLowerCase().trim();

@@ -47,7 +47,11 @@ describe('UsersService', () => {
 
   describe('create', () => {
     it('should create user with normalized email', async () => {
-      const dto = { email: '  TEST@example.com  ', name: 'Test User' };
+      const dto = { 
+        email: '  TEST@example.com  ', 
+        name: 'Test User',
+        clientId: '507f1f77bcf86cd799439011' 
+      };
       mockUserRepository.findByEmail.mockResolvedValue(null);
       mockUserRepository.create.mockResolvedValue({
         ...dto,
@@ -65,12 +69,17 @@ describe('UsersService', () => {
         ...dto,
         email: 'test@example.com',
         status: 'active',
+        clientId: expect.anything(), // Since we convert to ObjectId, exact match might fail strict equality check in mock unless we check for ObjectId instance
       });
       expect(result.email).toBe('test@example.com');
     });
 
     it('should throw ConflictException if email exists', async () => {
-      const dto = { email: 'test@example.com', name: 'Test User' };
+      const dto = { 
+        email: 'test@example.com', 
+        name: 'Test User',
+        clientId: '507f1f77bcf86cd799439011' 
+      };
       mockUserRepository.findByEmail.mockResolvedValue(mockUser);
 
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
@@ -176,6 +185,17 @@ describe('UsersService', () => {
       await expect(
         service.update('user-1', { name: 'Updated' }),
       ).rejects.toThrow('Archived users cannot be modified');
+    });
+
+    it('should throw BadRequestException if trying to update clientId', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+
+      await expect(
+        service.update('user-1', { clientId: 'new-client' } as any),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.update('user-1', { clientId: 'new-client' } as any),
+      ).rejects.toThrow('clientId cannot be updated');
     });
   });
 

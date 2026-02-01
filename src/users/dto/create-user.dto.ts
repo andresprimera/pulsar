@@ -1,4 +1,4 @@
-import { IsEmail, IsString } from 'class-validator';
+import { IsEmail, IsMongoId, IsString } from 'class-validator';
 
 export class CreateUserDto {
   @IsEmail()
@@ -6,4 +6,7 @@ export class CreateUserDto {
 
   @IsString()
   name: string;
+
+  @IsMongoId()
+  clientId: string;
 }

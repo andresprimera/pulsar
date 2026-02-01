@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { User } from '../schemas/user.schema';
 
 @Injectable()
@@ -37,5 +37,13 @@ export class UserRepository {
     data: Partial<User>,
   ): Promise<User | null> {
     return this.model.findByIdAndUpdate(id, data, { new: true }).exec();
+  }
+
+  async findByClient(clientId: Types.ObjectId): Promise<User[]> {
+    return this.model.find({ clientId }).exec();
+  }
+
+  async findActiveByClient(clientId: Types.ObjectId): Promise<User[]> {
+    return this.model.find({ clientId, status: 'active' }).exec();
   }
 }

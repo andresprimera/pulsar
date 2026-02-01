@@ -41,7 +41,11 @@ describe('UsersController', () => {
 
   describe('POST /users', () => {
     it('should call service.create', async () => {
-      const dto = { email: 'test@example.com', name: 'New User' };
+      const dto = { 
+        email: 'test@example.com', 
+        name: 'New User',
+        clientId: '507f1f77bcf86cd799439011'
+      };
       mockUsersService.create.mockResolvedValue({ ...dto, _id: 'new-id' });
 
       const result = await controller.create(dto);
