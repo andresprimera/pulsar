@@ -6,6 +6,8 @@ import { AgentsModule } from './agents/agents.module';
 import { UsersModule } from './users/users.module';
 import { ClientsModule } from './clients/clients.module';
 
+import { ClientAgentsModule } from './client-agents/client-agents.module';
+
 @Module({
   imports: [
     DatabaseModule,
@@ -13,6 +15,7 @@ import { ClientsModule } from './clients/clients.module';
     AgentsModule,
     UsersModule,
     ClientsModule,
+    ClientAgentsModule,
   ],
 
 

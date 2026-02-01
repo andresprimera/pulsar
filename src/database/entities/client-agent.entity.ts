@@ -2,5 +2,8 @@ export interface ClientAgent {
   id: string;
   clientId: string;
   agentId: string;
-  enabled: boolean;
+  status: 'active' | 'inactive' | 'archived';
+  price: number;
+  createdAt: Date;
+  updatedAt: Date;
 }

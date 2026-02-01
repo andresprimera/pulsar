@@ -1,0 +1,611 @@
+diff --git a/src/agents/agents.module.ts b/src/agents/agents.module.ts
+index 7adb3d4..b67a869 100644
+--- a/src/agents/agents.module.ts
++++ b/src/agents/agents.module.ts
+@@ -5,5 +5,6 @@ import { AgentsService } from './agents.service';
+ @Module({
+   controllers: [AgentsController],
+   providers: [AgentsService],
++  exports: [AgentsService],
+ })
+ export class AgentsModule {}
+diff --git a/src/app.module.ts b/src/app.module.ts
+index c410c94..96ebff7 100644
+--- a/src/app.module.ts
++++ b/src/app.module.ts
+@@ -6,6 +6,8 @@ import { AgentsModule } from './agents/agents.module';
+ import { UsersModule } from './users/users.module';
+ import { ClientsModule } from './clients/clients.module';
+ 
++import { ClientAgentsModule } from './client-agents/client-agents.module';
++
+ @Module({
+   imports: [
+     DatabaseModule,
+@@ -13,6 +15,7 @@ import { ClientsModule } from './clients/clients.module';
+     AgentsModule,
+     UsersModule,
+     ClientsModule,
++    ClientAgentsModule,
+   ],
+ 
+ 
+diff --git a/src/client-agents/client-agents.controller.spec.ts b/src/client-agents/client-agents.controller.spec.ts
+new file mode 100644
+index 0000000..76a0fc1
+--- /dev/null
++++ b/src/client-agents/client-agents.controller.spec.ts
+@@ -0,0 +1,100 @@
++import { Test, TestingModule } from '@nestjs/testing';
++import { ClientAgentsController } from './client-agents.controller';
++import { ClientAgentsService } from './client-agents.service';
++
++describe('ClientAgentsController', () => {
++  let controller: ClientAgentsController;
++  let mockClientAgentsService: any;
++
++  const mockClientAgent = {
++    id: 'ca-1',
++    clientId: 'client-1',
++    agentId: 'agent-1',
++    status: 'active',
++    price: 100,
++  };
++
++  beforeEach(async () => {
++    mockClientAgentsService = {
++      create: jest.fn(),
++      findByClient: jest.fn(),
++      update: jest.fn(),
++      updateStatus: jest.fn(),
++      calculateClientTotal: jest.fn(),
++    };
++
++    const module: TestingModule = await Test.createTestingModule({
++      controllers: [ClientAgentsController],
++      providers: [
++        {
++          provide: ClientAgentsService,
++          useValue: mockClientAgentsService,
++        },
++      ],
++    }).compile();
++
++    controller = module.get<ClientAgentsController>(ClientAgentsController);
++  });
++
++  it('should be defined', () => {
++    expect(controller).toBeDefined();
++  });
++
++  describe('create', () => {
++    it('should call service.create', async () => {
++      const dto = { clientId: 'client-1', agentId: 'agent-1', price: 100 };
++      mockClientAgentsService.create.mockResolvedValue(mockClientAgent);
++
++      const result = await controller.create(dto);
++
++      expect(mockClientAgentsService.create).toHaveBeenCalledWith(dto);
++      expect(result).toEqual(mockClientAgent);
++    });
++  });
++
++  describe('findByClient', () => {
++    it('should call service.findByClient', async () => {
++      mockClientAgentsService.findByClient.mockResolvedValue([mockClientAgent]);
++
++      const result = await controller.findByClient('client-1');
++
++      expect(mockClientAgentsService.findByClient).toHaveBeenCalledWith('client-1');
++      expect(result).toEqual([mockClientAgent]);
++    });
++  });
++
++  describe('update', () => {
++    it('should call service.update', async () => {
++      const dto = { price: 200 };
++      mockClientAgentsService.update.mockResolvedValue({ ...mockClientAgent, price: 200 });
++
++      const result = await controller.update('ca-1', dto);
++
++      expect(mockClientAgentsService.update).toHaveBeenCalledWith('ca-1', dto);
++      expect(result.price).toBe(200);
++    });
++  });
++
++  describe('updateStatus', () => {
++    it('should call service.updateStatus', async () => {
++      const dto = { status: 'inactive' as const };
++      mockClientAgentsService.updateStatus.mockResolvedValue({ ...mockClientAgent, status: 'inactive' });
++
++      const result = await controller.updateStatus('ca-1', dto);
++
++      expect(mockClientAgentsService.updateStatus).toHaveBeenCalledWith('ca-1', dto);
++      expect(result.status).toBe('inactive');
++    });
++  });
++
++  describe('calculateClientTotal', () => {
++    it('should call service.calculateClientTotal', async () => {
++      mockClientAgentsService.calculateClientTotal.mockResolvedValue(100);
++
++      const result = await controller.calculateClientTotal('client-1');
++
++      expect(mockClientAgentsService.calculateClientTotal).toHaveBeenCalledWith('client-1');
++      expect(result).toBe(100);
++    });
++  });
++});
+diff --git a/src/client-agents/client-agents.controller.ts b/src/client-agents/client-agents.controller.ts
+new file mode 100644
+index 0000000..b91a1db
+--- /dev/null
++++ b/src/client-agents/client-agents.controller.ts
+@@ -0,0 +1,36 @@
++import { Controller, Post, Get, Patch, Body, Param } from '@nestjs/common';
++import { ClientAgentsService } from './client-agents.service';
++import { CreateClientAgentDto } from './dto/create-client-agent.dto';
++import { UpdateClientAgentDto } from './dto/update-client-agent.dto';
++import { UpdateClientAgentStatusDto } from './dto/update-client-agent-status.dto';
++
++@Controller('client-agents')
++export class ClientAgentsController {
++  constructor(private readonly clientAgentsService: ClientAgentsService) {}
++
++  @Post()
++  create(@Body() createDto: CreateClientAgentDto) {
++    return this.clientAgentsService.create(createDto);
++  }
++
++  @Get('client/:clientId')
++  findByClient(@Param('clientId') clientId: string) {
++    return this.clientAgentsService.findByClient(clientId);
++  }
++
++  @Patch(':id')
++  update(@Param('id') id: string, @Body() updateDto: UpdateClientAgentDto) {
++    return this.clientAgentsService.update(id, updateDto);
++  }
++
++  @Patch(':id/status')
++  updateStatus(@Param('id') id: string, @Body() updateDto: UpdateClientAgentStatusDto) {
++    return this.clientAgentsService.updateStatus(id, updateDto);
++  }
++
++  // Modified route to match controller structure
++  @Get('billing/client/:clientId')
++  calculateClientTotal(@Param('clientId') clientId: string) {
++    return this.clientAgentsService.calculateClientTotal(clientId);
++  }
++}
+diff --git a/src/client-agents/client-agents.module.ts b/src/client-agents/client-agents.module.ts
+new file mode 100644
+index 0000000..66ac934
+--- /dev/null
++++ b/src/client-agents/client-agents.module.ts
+@@ -0,0 +1,13 @@
++import { Module } from '@nestjs/common';
++import { ClientAgentsService } from './client-agents.service';
++import { ClientAgentsController } from './client-agents.controller';
++import { DatabaseModule } from '../database/database.module';
++import { ClientsModule } from '../clients/clients.module';
++import { AgentsModule } from '../agents/agents.module';
++
++@Module({
++  imports: [DatabaseModule, ClientsModule, AgentsModule],
++  controllers: [ClientAgentsController],
++  providers: [ClientAgentsService],
++})
++export class ClientAgentsModule {}
+diff --git a/src/client-agents/client-agents.service.spec.ts b/src/client-agents/client-agents.service.spec.ts
+new file mode 100644
+index 0000000..fc0d3a3
+--- /dev/null
++++ b/src/client-agents/client-agents.service.spec.ts
+@@ -0,0 +1,188 @@
++import { Test, TestingModule } from '@nestjs/testing';
++import { NotFoundException, BadRequestException } from '@nestjs/common';
++import { ClientAgentsService } from './client-agents.service';
++import { ClientAgentRepository } from '../database/repositories/client-agent.repository';
++import { ClientsService } from '../clients/clients.service';
++import { AgentsService } from '../agents/agents.service';
++
++describe('ClientAgentsService', () => {
++  let service: ClientAgentsService;
++  let mockClientAgentRepository: any;
++  let mockClientsService: any;
++  let mockAgentsService: any;
++
++  const mockClientAgent = {
++    id: 'ca-1',
++    clientId: 'client-1',
++    agentId: 'agent-1',
++    status: 'active',
++    price: 100,
++  };
++
++  const mockClient = {
++    id: 'client-1',
++    status: 'active',
++  };
++
++  const mockAgent = {
++    id: 'agent-1',
++    status: 'active',
++  };
++
++  beforeEach(async () => {
++    mockClientAgentRepository = {
++      create: jest.fn(),
++      findByClient: jest.fn(),
++      findByClientAndStatus: jest.fn(),
++      findById: jest.fn(),
++      update: jest.fn(),
++    };
++
++    mockClientsService = {
++      findOne: jest.fn(),
++    };
++
++    mockAgentsService = {
++      findOne: jest.fn(),
++    };
++
++    const module: TestingModule = await Test.createTestingModule({
++      providers: [
++        ClientAgentsService,
++        {
++          provide: ClientAgentRepository,
++          useValue: mockClientAgentRepository,
++        },
++        {
++          provide: ClientsService,
++          useValue: mockClientsService,
++        },
++        {
++          provide: AgentsService,
++          useValue: mockAgentsService,
++        },
++      ],
++    }).compile();
++
++    service = module.get<ClientAgentsService>(ClientAgentsService);
++  });
++
++  it('should be defined', () => {
++    expect(service).toBeDefined();
++  });
++
++  describe('create', () => {
++    it('should create client agent if client and agent are active', async () => {
++      mockClientsService.findOne.mockResolvedValue(mockClient);
++      mockAgentsService.findOne.mockResolvedValue(mockAgent);
++      mockClientAgentRepository.create.mockResolvedValue(mockClientAgent);
++
++      const dto = { clientId: 'client-1', agentId: 'agent-1', price: 100 };
++      const result = await service.create(dto);
++
++      expect(mockClientsService.findOne).toHaveBeenCalledWith('client-1');
++      expect(mockAgentsService.findOne).toHaveBeenCalledWith('agent-1');
++      expect(mockClientAgentRepository.create).toHaveBeenCalledWith({
++        ...dto,
++        status: 'active',
++      });
++      expect(result).toEqual(mockClientAgent);
++    });
++
++    it('should throw BadRequestException if client is not found', async () => {
++      mockClientsService.findOne.mockResolvedValue(null);
++      
++      const dto = { clientId: 'unknown', agentId: 'agent-1', price: 100 };
++      await expect(service.create(dto)).rejects.toThrow(BadRequestException);
++    });
++
++    it('should throw BadRequestException if client is archived', async () => {
++      mockClientsService.findOne.mockResolvedValue({ ...mockClient, status: 'archived' });
++      
++      const dto = { clientId: 'client-1', agentId: 'agent-1', price: 100 };
++      await expect(service.create(dto)).rejects.toThrow(BadRequestException);
++    });
++
++    it('should throw BadRequestException if agent is not found', async () => {
++      mockClientsService.findOne.mockResolvedValue(mockClient);
++      mockAgentsService.findOne.mockResolvedValue(null);
++      
++      const dto = { clientId: 'client-1', agentId: 'unknown', price: 100 };
++      await expect(service.create(dto)).rejects.toThrow(BadRequestException);
++    });
++
++     it('should throw BadRequestException if agent is archived', async () => {
++      mockClientsService.findOne.mockResolvedValue(mockClient);
++      mockAgentsService.findOne.mockResolvedValue({ ...mockAgent, status: 'archived' });
++      
++      const dto = { clientId: 'client-1', agentId: 'agent-1', price: 100 };
++      await expect(service.create(dto)).rejects.toThrow(BadRequestException);
++    });
++  });
++
++  describe('findByClient', () => {
++    it('should return client agents', async () => {
++      mockClientAgentRepository.findByClient.mockResolvedValue([mockClientAgent]);
++      
++      const result = await service.findByClient('client-1');
++      expect(mockClientAgentRepository.findByClient).toHaveBeenCalledWith('client-1');
++      expect(result).toEqual([mockClientAgent]);
++    });
++  });
++
++  describe('update', () => {
++    it('should update client agent', async () => {
++      mockClientAgentRepository.findById.mockResolvedValue(mockClientAgent);
++      mockClientAgentRepository.update.mockResolvedValue({ ...mockClientAgent, price: 200 });
++
++      const result = await service.update('ca-1', { price: 200 });
++      expect(mockClientAgentRepository.update).toHaveBeenCalledWith('ca-1', { price: 200 });
++      expect(result.price).toBe(200);
++    });
++
++    it('should throw NotFoundException if not found', async () => {
++      mockClientAgentRepository.findById.mockResolvedValue(null);
++      await expect(service.update('unknown', { price: 200 })).rejects.toThrow(NotFoundException);
++    });
++
++    it('should throw BadRequestException if archived', async () => {
++      mockClientAgentRepository.findById.mockResolvedValue({ ...mockClientAgent, status: 'archived' });
++      await expect(service.update('ca-1', { price: 200 })).rejects.toThrow(BadRequestException);
++    });
++  });
++
++  describe('updateStatus', () => {
++    it('should update status', async () => {
++      mockClientAgentRepository.findById.mockResolvedValue(mockClientAgent);
++      mockClientAgentRepository.update.mockResolvedValue({ ...mockClientAgent, status: 'inactive' });
++
++      const result = await service.updateStatus('ca-1', { status: 'inactive' });
++      expect(mockClientAgentRepository.update).toHaveBeenCalledWith('ca-1', { status: 'inactive' });
++      expect(result.status).toBe('inactive');
++    });
++
++    it('should throw BadRequestException if already archived', async () => {
++      mockClientAgentRepository.findById.mockResolvedValue({ ...mockClientAgent, status: 'archived' });
++      await expect(service.updateStatus('ca-1', { status: 'active' })).rejects.toThrow(BadRequestException);
++    });
++  });
++
++  describe('calculateClientTotal', () => {
++    it('should sum prices of active agents', async () => {
++      mockClientAgentRepository.findByClientAndStatus.mockResolvedValue([
++        { price: 100 },
++        { price: 200 },
++      ]);
++
++      const result = await service.calculateClientTotal('client-1');
++      expect(mockClientAgentRepository.findByClientAndStatus).toHaveBeenCalledWith('client-1', 'active');
++      expect(result).toBe(300);
++    });
++
++    it('should return 0 if no active agents', async () => {
++        mockClientAgentRepository.findByClientAndStatus.mockResolvedValue([]);
++        const result = await service.calculateClientTotal('client-1');
++        expect(result).toBe(0);
++    });
++  });
++});
+diff --git a/src/client-agents/client-agents.service.ts b/src/client-agents/client-agents.service.ts
+new file mode 100644
+index 0000000..3dc8338
+--- /dev/null
++++ b/src/client-agents/client-agents.service.ts
+@@ -0,0 +1,71 @@
++import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
++import { ClientAgentRepository } from '../database/repositories/client-agent.repository';
++import { CreateClientAgentDto } from './dto/create-client-agent.dto';
++import { UpdateClientAgentDto } from './dto/update-client-agent.dto';
++import { UpdateClientAgentStatusDto } from './dto/update-client-agent-status.dto';
++import { ClientsService } from '../clients/clients.service';
++import { AgentsService } from '../agents/agents.service';
++import { ClientAgent } from '../database/schemas/client-agent.schema';
++
++@Injectable()
++export class ClientAgentsService {
++  constructor(
++    private readonly clientAgentRepository: ClientAgentRepository,
++    private readonly clientsService: ClientsService,
++    private readonly agentsService: AgentsService,
++  ) {}
++
++  async create(data: CreateClientAgentDto): Promise<ClientAgent> {
++    const client = await this.clientsService.findOne(data.clientId);
++    if (!client || client.status === 'archived') {
++      throw new BadRequestException('Client not found or archived');
++    }
++
++    const agent = await this.agentsService.findOne(data.agentId);
++    if (!agent || agent.status === 'archived') {
++      throw new BadRequestException('Agent not found or archived');
++    }
++
++    return this.clientAgentRepository.create({
++      ...data,
++      status: 'active',
++    });
++  }
++
++  async findByClient(clientId: string): Promise<ClientAgent[]> {
++    return this.clientAgentRepository.findByClient(clientId);
++  }
++
++  async update(id: string, data: UpdateClientAgentDto): Promise<ClientAgent> {
++    const clientAgent = await this.clientAgentRepository.findById(id);
++    if (!clientAgent) {
++      throw new NotFoundException('ClientAgent not found');
++    }
++
++    if (clientAgent.status === 'archived') {
++      throw new BadRequestException('Cannot update archived ClientAgent');
++    }
++
++    const updated = await this.clientAgentRepository.update(id, data);
++    return updated!; // non-null assertion because we checked existence
++  }
++
++  async updateStatus(id: string, data: UpdateClientAgentStatusDto): Promise<ClientAgent> {
++    const clientAgent = await this.clientAgentRepository.findById(id);
++    if (!clientAgent) {
++      throw new NotFoundException('ClientAgent not found');
++    }
++
++    if (clientAgent.status === 'archived') {
++      throw new BadRequestException('Cannot modify archived ClientAgent');
++    }
++
++    const updated = await this.clientAgentRepository.update(id, { status: data.status });
++    return updated!;
++  }
++
++  async calculateClientTotal(clientId: string): Promise<number> {
++    const activeClientAgents = await this.clientAgentRepository.findByClientAndStatus(clientId, 'active');
++    return activeClientAgents.reduce((total, ca) => total + ca.price, 0);
++  }
++}
+diff --git a/src/client-agents/dto/create-client-agent.dto.ts b/src/client-agents/dto/create-client-agent.dto.ts
+new file mode 100644
+index 0000000..11b2c67
+--- /dev/null
++++ b/src/client-agents/dto/create-client-agent.dto.ts
+@@ -0,0 +1,18 @@
++import { IsEnum, IsMongoId, IsNotEmpty, IsNumber, Min } from 'class-validator';
++import { Type } from 'class-transformer';
++
++export class CreateClientAgentDto {
++  @IsMongoId()
++  @IsNotEmpty()
++  clientId: string;
++
++  @IsMongoId()
++  @IsNotEmpty()
++  agentId: string;
++
++  @Type(() => Number)
++  @IsNumber()
++  @Min(0)
++  @IsNotEmpty()
++  price: number;
++}
+diff --git a/src/client-agents/dto/update-client-agent-status.dto.ts b/src/client-agents/dto/update-client-agent-status.dto.ts
+new file mode 100644
+index 0000000..210ccd2
+--- /dev/null
++++ b/src/client-agents/dto/update-client-agent-status.dto.ts
+@@ -0,0 +1,7 @@
++import { IsEnum, IsNotEmpty } from 'class-validator';
++
++export class UpdateClientAgentStatusDto {
++  @IsEnum(['active', 'inactive', 'archived'])
++  @IsNotEmpty()
++  status: 'active' | 'inactive' | 'archived';
++}
+diff --git a/src/client-agents/dto/update-client-agent.dto.ts b/src/client-agents/dto/update-client-agent.dto.ts
+new file mode 100644
+index 0000000..698ae85
+--- /dev/null
++++ b/src/client-agents/dto/update-client-agent.dto.ts
+@@ -0,0 +1,10 @@
++import { IsNumber, IsOptional, Min } from 'class-validator';
++import { Type } from 'class-transformer';
++
++export class UpdateClientAgentDto {
++  @Type(() => Number)
++  @IsNumber()
++  @Min(0)
++  @IsOptional()
++  price?: number;
++}
+diff --git a/src/clients/clients.module.ts b/src/clients/clients.module.ts
+index e8b7c58..5980c50 100644
+--- a/src/clients/clients.module.ts
++++ b/src/clients/clients.module.ts
+@@ -5,5 +5,6 @@ import { ClientsService } from './clients.service';
+ @Module({
+   controllers: [ClientsController],
+   providers: [ClientsService],
++  exports: [ClientsService],
+ })
+ export class ClientsModule {}
+diff --git a/src/database/entities/client-agent.entity.ts b/src/database/entities/client-agent.entity.ts
+index b4743f1..96eacd8 100644
+--- a/src/database/entities/client-agent.entity.ts
++++ b/src/database/entities/client-agent.entity.ts
+@@ -2,5 +2,8 @@ export interface ClientAgent {
+   id: string;
+   clientId: string;
+   agentId: string;
+-  enabled: boolean;
++  status: 'active' | 'inactive' | 'archived';
++  price: number;
++  createdAt: Date;
++  updatedAt: Date;
+ }
+diff --git a/src/database/repositories/client-agent.repository.ts b/src/database/repositories/client-agent.repository.ts
+index c1a9374..2f629eb 100644
+--- a/src/database/repositories/client-agent.repository.ts
++++ b/src/database/repositories/client-agent.repository.ts
+@@ -18,7 +18,23 @@ export class ClientAgentRepository {
+     return this.model.find().exec();
+   }
+ 
+-  async findByClientId(clientId: string): Promise<ClientAgent[]> {
++  async create(data: Partial<ClientAgent>): Promise<ClientAgent> {
++    const newClientAgent = new this.model(data);
++    return newClientAgent.save();
++  }
++
++  async findByClient(clientId: string): Promise<ClientAgent[]> {
+     return this.model.find({ clientId }).exec();
+   }
++
++  async findByClientAndStatus(
++    clientId: string,
++    status: 'active' | 'inactive' | 'archived',
++  ): Promise<ClientAgent[]> {
++    return this.model.find({ clientId, status }).exec();
++  }
++
++  async update(id: string, data: Partial<ClientAgent>): Promise<ClientAgent | null> {
++    return this.model.findByIdAndUpdate(id, data, { new: true }).exec();
++  }
+ }
+diff --git a/src/database/schemas/client-agent.schema.ts b/src/database/schemas/client-agent.schema.ts
+index 1d9ca00..2174685 100644
+--- a/src/database/schemas/client-agent.schema.ts
++++ b/src/database/schemas/client-agent.schema.ts
+@@ -1,7 +1,7 @@
+ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+ import { Document } from 'mongoose';
+ 
+-@Schema({ collection: 'client_agents' })
++@Schema({ collection: 'client_agents', timestamps: true })
+ export class ClientAgent extends Document {
+   @Prop({ required: true, index: true })
+   clientId: string;
+@@ -9,8 +9,18 @@ export class ClientAgent extends Document {
+   @Prop({ required: true, index: true })
+   agentId: string;
+ 
+-  @Prop({ required: true, default: true })
+-  enabled: boolean;
++  @Prop({
++    required: true,
++    enum: ['active', 'inactive', 'archived'],
++    default: 'active',
++  })
++  status: 'active' | 'inactive' | 'archived';
++
++  @Prop({ required: true, min: 0 })
++  price: number;
++
++  createdAt: Date;
++  updatedAt: Date;
+ }
+ 
+ export const ClientAgentSchema = SchemaFactory.createForClass(ClientAgent);
