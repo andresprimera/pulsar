@@ -26,6 +26,18 @@ export class AgentRepository {
     return this.model.find({ status: 'active' }).exec();
   }
 
+  async findByStatus(status: string): Promise<Agent[]> {
+    return this.model.find({ status }).exec();
+  }
+
+  async create(data: Partial<Agent>): Promise<Agent> {
+    return this.model.create(data);
+  }
+
+  async update(id: string, data: Partial<Agent>): Promise<Agent | null> {
+    return this.model.findByIdAndUpdate(id, data, { new: true }).exec();
+  }
+
   /**
    * Validates that an agent exists and is active (hireable).
    * Use this when creating new AgentChannel bindings.
