@@ -14,6 +14,9 @@ import { ChannelRepository } from './repositories/channel.repository';
 import { ClientAgentRepository } from './repositories/client-agent.repository';
 import { AgentChannelRepository } from './repositories/agent-channel.repository';
 import { SeederService } from './seeder.service';
+import { User, UserSchema } from './schemas/user.schema';
+import { UserRepository } from './repositories/user.repository';
+
 
 const repositories = [
   ClientRepository,
@@ -21,7 +24,9 @@ const repositories = [
   ChannelRepository,
   ClientAgentRepository,
   AgentChannelRepository,
+  UserRepository,
 ];
+
 
 @Global()
 @Module({
@@ -35,7 +40,9 @@ const repositories = [
       { name: Channel.name, schema: ChannelSchema },
       { name: ClientAgent.name, schema: ClientAgentSchema },
       { name: AgentChannel.name, schema: AgentChannelSchema },
+      { name: User.name, schema: UserSchema },
     ]),
+
   ],
   providers: [...repositories, SeederService],
   exports: repositories,
