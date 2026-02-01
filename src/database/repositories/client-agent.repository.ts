@@ -1,26 +1,24 @@
 import { Injectable } from '@nestjs/common';
-import { ClientAgent } from '../entities/client-agent.entity';
-
-const MOCK_DATA: ClientAgent[] = [
-  {
-    id: 'ca-1',
-    clientId: 'client-1',
-    agentId: 'agent-1',
-    enabled: true,
-  },
-];
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { ClientAgent } from '../schemas/client-agent.schema';
 
 @Injectable()
 export class ClientAgentRepository {
-  async findById(id: string): Promise<ClientAgent | undefined> {
-    return MOCK_DATA.find((ca) => ca.id === id);
+  constructor(
+    @InjectModel(ClientAgent.name)
+    private readonly model: Model<ClientAgent>,
+  ) {}
+
+  async findById(id: string): Promise<ClientAgent | null> {
+    return this.model.findById(id).exec();
   }
 
   async findAll(): Promise<ClientAgent[]> {
-    return MOCK_DATA;
+    return this.model.find().exec();
   }
 
   async findByClientId(clientId: string): Promise<ClientAgent[]> {
-    return MOCK_DATA.filter((ca) => ca.clientId === clientId);
+    return this.model.find({ clientId }).exec();
   }
 }

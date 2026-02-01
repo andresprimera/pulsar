@@ -18,15 +18,18 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "prepare": "husky"
+    "prepare": "husky",
+    "seed": "ts-node src/database/seed.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.34",
     "@ai-sdk/openai": "^3.0.24",
     "@nestjs/common": "^9.0.0",
     "@nestjs/core": "^9.0.0",
+    "@nestjs/mongoose": "^9.2.2",
     "@nestjs/platform-express": "^9.0.0",
     "ai": "^6.0.66",
+    "mongoose": "^7.8.8",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.2.0"
   },

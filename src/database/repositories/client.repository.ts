@@ -1,25 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { Client } from '../entities/client.entity';
-
-const MOCK_DATA: Client[] = [
-  {
-    id: 'client-1',
-    name: 'Acme Corp',
-    status: 'active',
-    llmPreferences: {
-      provider: 'openai',
-      defaultModel: 'gpt-4',
-    },
-  },
-];
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Client } from '../schemas/client.schema';
 
 @Injectable()
 export class ClientRepository {
-  async findById(id: string): Promise<Client | undefined> {
-    return MOCK_DATA.find((c) => c.id === id);
+  constructor(
+    @InjectModel(Client.name)
+    private readonly model: Model<Client>,
+  ) {}
+
+  async findById(id: string): Promise<Client | null> {
+    return this.model.findById(id).exec();
   }
 
   async findAll(): Promise<Client[]> {
-    return MOCK_DATA;
+    return this.model.find().exec();
   }
 }

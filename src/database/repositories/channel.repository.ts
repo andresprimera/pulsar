@@ -1,21 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { Channel } from '../entities/channel.entity';
-
-const MOCK_DATA: Channel[] = [
-  {
-    id: 'channel-whatsapp',
-    type: 'whatsapp',
-    provider: 'meta',
-  },
-];
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Channel } from '../schemas/channel.schema';
 
 @Injectable()
 export class ChannelRepository {
-  async findById(id: string): Promise<Channel | undefined> {
-    return MOCK_DATA.find((c) => c.id === id);
+  constructor(
+    @InjectModel(Channel.name)
+    private readonly model: Model<Channel>,
+  ) {}
+
+  async findById(id: string): Promise<Channel | null> {
+    return this.model.findById(id).exec();
   }
 
   async findAll(): Promise<Channel[]> {
-    return MOCK_DATA;
+    return this.model.find().exec();
   }
 }
