@@ -3,6 +3,9 @@ import { Document } from 'mongoose';
 
 @Schema({ collection: 'channels' })
 export class Channel extends Document {
+  @Prop({ required: true, unique: true  })
+  name: string;
+
   @Prop({ required: true, enum: ['whatsapp', 'telegram', 'web', 'api'] })
   type: 'whatsapp' | 'telegram' | 'web' | 'api';
 

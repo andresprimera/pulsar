@@ -160,7 +160,6 @@ describe('WhatsappService', () => {
         {
           agentId: 'agent-1',
           clientId: 'client-1',
-          channelType: 'whatsapp',
           systemPrompt: 'You are a helpful assistant.',
           llmConfig: mockAgentChannel.llmConfig,
           channelConfig: mockAgentChannel.channelConfig,

@@ -5,6 +5,8 @@ import { ClientRepository } from './repositories/client.repository';
 import { AgentRepository } from './repositories/agent.repository';
 import { UserRepository } from './repositories/user.repository';
 import { ClientAgentRepository } from './repositories/client-agent.repository';
+import { ChannelRepository } from './repositories/channel.repository';
+import { AgentChannelRepository } from './repositories/agent-channel.repository';
 import { Agent } from './schemas/agent.schema';
 
 @Injectable()
@@ -16,6 +18,8 @@ export class SeederService implements OnApplicationBootstrap {
     private readonly agentRepository: AgentRepository,
     private readonly userRepository: UserRepository,
     private readonly clientAgentRepository: ClientAgentRepository,
+    private readonly channelRepository: ChannelRepository,
+    private readonly agentChannelRepository: AgentChannelRepository,
     @InjectModel(Agent.name)
     private readonly agentModel: Model<Agent>,
   ) {}
@@ -98,6 +102,33 @@ export class SeederService implements OnApplicationBootstrap {
       } else {
         this.logger.log(`ClientAgent link already exists (${clientAgent._id})`);
       }
+
+      // 5. Channel (WhatsApp)
+      const channel = await this.channelRepository.findOrCreateByName('WhatsApp', {
+        name: 'WhatsApp',
+        type: 'whatsapp',
+        provider: 'meta',
+      });
+      this.logger.log(`Ensure Channel: WhatsApp (${channel._id})`);
+
+      // 6. AgentChannel (WhatsApp Link)
+      const agentChannel = await this.agentChannelRepository.findOrCreate({
+          agentId: agent._id as string,
+          clientId: client._id as string,
+          channelId: channel._id as string,
+          status: 'active',
+          channelConfig: {
+            phoneNumberId: '1234567890',
+            accessToken: '__REPLACE_ME_ACCESS_TOKEN__',
+            webhookVerifyToken: '__REPLACE_ME_VERIFY_TOKEN__',
+          },
+          llmConfig: {
+            provider: 'openai',
+            apiKey: '__REPLACE_ME_API_KEY__',
+            model: 'gpt-4o',
+          },
+      });
+      this.logger.log(`Ensure AgentChannel: WhatsApp (${agentChannel._id})`);
 
       this.logger.log('Seeding complete.');
     } catch (error) {

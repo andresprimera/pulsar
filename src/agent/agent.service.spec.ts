@@ -28,7 +28,6 @@ describe('AgentService', () => {
   const mockContext: AgentContext = {
     agentId: 'agent-1',
     clientId: 'client-1',
-    channelType: 'whatsapp',
     systemPrompt: 'You are a helpful assistant.',
     llmConfig: { provider: 'openai', apiKey: 'sk-mock', model: 'gpt-4' },
   };

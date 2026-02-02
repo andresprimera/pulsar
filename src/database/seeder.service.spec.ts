@@ -6,6 +6,8 @@ import { ClientRepository } from './repositories/client.repository';
 import { AgentRepository } from './repositories/agent.repository';
 import { UserRepository } from './repositories/user.repository';
 import { ClientAgentRepository } from './repositories/client-agent.repository';
+import { ChannelRepository } from './repositories/channel.repository';
+import { AgentChannelRepository } from './repositories/agent-channel.repository';
 import { Logger } from '@nestjs/common';
 
 describe('SeederService', () => {
@@ -15,6 +17,8 @@ describe('SeederService', () => {
   let mockAgentRepository: any;
   let mockUserRepository: any;
   let mockClientAgentRepository: any;
+  let mockChannelRepository: any;
+  let mockAgentChannelRepository: any;
   let loggerSpy: jest.SpyInstance;
 
   beforeEach(async () => {
@@ -36,6 +40,12 @@ describe('SeederService', () => {
       findByClient: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockResolvedValue({ _id: 'link-id' }),
     };
+    mockChannelRepository = {
+        findOrCreateByName: jest.fn().mockResolvedValue({ _id: 'channel-id', name: 'WhatsApp' }),
+    };
+    mockAgentChannelRepository = {
+        findOrCreate: jest.fn().mockResolvedValue({ _id: 'agent-channel-id' }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -48,6 +58,8 @@ describe('SeederService', () => {
         { provide: AgentRepository, useValue: mockAgentRepository },
         { provide: UserRepository, useValue: mockUserRepository },
         { provide: ClientAgentRepository, useValue: mockClientAgentRepository },
+        { provide: ChannelRepository, useValue: mockChannelRepository },
+        { provide: AgentChannelRepository, useValue: mockAgentChannelRepository },
       ],
     }).compile();
 
@@ -102,6 +114,28 @@ describe('SeederService', () => {
       await service.onApplicationBootstrap();
 
       expect(mockClientRepository.create).toHaveBeenCalled();
+      
+      // Verify WhatsApp Channel seeding
+      expect(mockChannelRepository.findOrCreateByName).toHaveBeenCalledWith(
+        'WhatsApp', 
+        expect.objectContaining({
+          name: 'WhatsApp',
+          type: 'whatsapp'
+        })
+      );
+      
+      // Verify AgentChannel linking
+      expect(mockAgentChannelRepository.findOrCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clientId: 'client-id',
+          channelId: 'channel-id',
+          status: 'active',
+          channelConfig: expect.objectContaining({
+            phoneNumberId: '1234567890',
+            accessToken: '__REPLACE_ME_ACCESS_TOKEN__'
+          })
+        })
+      );
     });
 
     it('should skip seeding in DEVELOPMENT if SEED_DB is false', async () => {

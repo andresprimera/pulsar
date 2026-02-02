@@ -9,11 +9,11 @@ export class AgentChannel extends Document {
   @Prop({ required: true, index: true })
   agentId: string;
 
-  @Prop({ required: true, enum: ['whatsapp'] })
-  channelType: 'whatsapp';
+  @Prop({ required: true, index: true })
+  channelId: string;
 
-  @Prop({ required: true, default: true })
-  enabled: boolean;
+  @Prop({ required: true, enum: ['active', 'inactive'], default: 'active' })
+  status: 'active' | 'inactive';
 
   @Prop({ type: Object, required: true })
   channelConfig: {
@@ -32,5 +32,8 @@ export class AgentChannel extends Document {
 
 export const AgentChannelSchema = SchemaFactory.createForClass(AgentChannel);
 
-// Critical index for WhatsApp webhook resolution
-AgentChannelSchema.index({ 'channelConfig.phoneNumberId': 1, enabled: 1 });
+// Critical: Enforce global uniqueness for WhatsApp phone number to ensure safe webhook routing
+AgentChannelSchema.index({ 'channelConfig.phoneNumberId': 1 }, { unique: true });
+
+// Enforce uniqueness for Client + Agent + Channel (Multi-Tenant)
+AgentChannelSchema.index({ clientId: 1, agentId: 1, channelId: 1 }, { unique: true });

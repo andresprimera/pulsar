@@ -1,8 +1,7 @@
 export interface AgentChannel {
   id: string;
   clientId: string;
-  agentId: string;
-  channelType: 'whatsapp';
+  channelId: string;
   enabled: boolean;
   channelConfig: {
     phoneNumberId: string;

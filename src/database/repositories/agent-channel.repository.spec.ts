@@ -88,9 +88,8 @@ describe('AgentChannelRepository', () => {
       const result = await repository.findByPhoneNumberId('phone123');
 
       expect(mockModel.findOne).toHaveBeenCalledWith({
-        channelType: 'whatsapp',
         'channelConfig.phoneNumberId': 'phone123',
-        enabled: true,
+        status: 'active',
       });
       expect(result).toEqual(mockAgentChannel);
     });
