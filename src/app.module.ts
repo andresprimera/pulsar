@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { DatabaseModule } from './database/database.module';
 import { WhatsappModule } from './channels/whatsapp/whatsapp.module';
@@ -10,6 +11,7 @@ import { ClientAgentsModule } from './client-agents/client-agents.module';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
     DatabaseModule,
     WhatsappModule,
     AgentsModule,

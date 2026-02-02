@@ -1,43 +1,107 @@
-import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
+import { Injectable, OnApplicationBootstrap, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
+import { ClientRepository } from './repositories/client.repository';
+import { AgentRepository } from './repositories/agent.repository';
+import { UserRepository } from './repositories/user.repository';
+import { ClientAgentRepository } from './repositories/client-agent.repository';
 import { Agent } from './schemas/agent.schema';
 
 @Injectable()
 export class SeederService implements OnApplicationBootstrap {
+  private readonly logger = new Logger(SeederService.name);
+
   constructor(
+    private readonly clientRepository: ClientRepository,
+    private readonly agentRepository: AgentRepository,
+    private readonly userRepository: UserRepository,
+    private readonly clientAgentRepository: ClientAgentRepository,
     @InjectModel(Agent.name)
     private readonly agentModel: Model<Agent>,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    // Production safety guard
-    if (process.env.DISABLE_AUTO_SEED === 'true') {
-      console.log('[Seeder] Auto seeding disabled');
+    const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/pulsar';
+    this.logger.log(`Connected to Database: ${uri.replace(/:([^:@]+)@/, ':****@')}`);
+
+    const isProd = process.env.NODE_ENV === 'production';
+    const startSeed = isProd
+      ? process.env.SEED_DB === 'true' // Prod: Must be explicit
+      : process.env.SEED_DB !== 'false'; // Dev: Default on, explicit off
+
+    if (!startSeed) {
+      this.logger.log(`Skipping seeding (NODE_ENV=${process.env.NODE_ENV}, SEED_DB=${process.env.SEED_DB})`);
       return;
     }
 
-    await this.seedAgents();
+    await this.seed();
   }
 
-  private async seedAgents(): Promise<void> {
-    // Use exists() for optimized empty-collection check
-    const hasAgents = await this.agentModel.exists({});
+  private async seed(): Promise<void> {
+    this.logger.log('Starting database seed...');
 
-    if (hasAgents) {
-      console.log('[Seeder] Agents collection has data, skipping seed');
-      return;
+    try {
+      // 1. Client
+      let client = (await this.clientRepository.findAll()).find(c => c.name === 'Acme Corp');
+      if (!client) {
+        this.logger.log('Creating Client: Acme Corp');
+        client = await this.clientRepository.create({
+          name: 'Acme Corp',
+          status: 'active',
+        });
+      } else {
+        this.logger.log(`Client "Acme Corp" already exists (${client._id})`);
+      }
+
+      // 2. Agent
+      let agent: any = await this.agentModel.findOne({ name: 'Support Bot' }).exec();
+      
+      if (!agent) {
+        this.logger.log('Creating Agent: Support Bot');
+        agent = await this.agentRepository.create({
+          name: 'Support Bot',
+          systemPrompt: 'You are a helpful support assistant.',
+          status: 'active',
+          createdBySeeder: true,
+        });
+      } else {
+        this.logger.log(`Agent "Support Bot" already exists (${agent._id})`);
+      }
+
+      // 3. User
+      const userEmail = 'john.doe@pulsar.com';
+      let user = await this.userRepository.findByEmail(userEmail);
+      if (!user) {
+        this.logger.log(`Creating User: ${userEmail}`);
+        user = await this.userRepository.create({
+          name: 'John Doe',
+          email: userEmail,
+          clientId: client._id as Types.ObjectId, // cast if needed based on repo types
+          status: 'active',
+        });
+      } else {
+        this.logger.log(`User "${userEmail}" already exists (${user._id})`);
+      }
+
+      // 4. ClientAgent
+      const clientAgents = await this.clientAgentRepository.findByClient(client._id as string);
+      let clientAgent = clientAgents.find(ca => ca.agentId.toString() === agent._id.toString());
+      
+      if (!clientAgent) {
+        this.logger.log('Creating ClientAgent link');
+        clientAgent = await this.clientAgentRepository.create({
+          clientId: client._id as string,
+          agentId: agent._id as string,
+          status: 'active',
+          price: 100,
+        });
+      } else {
+        this.logger.log(`ClientAgent link already exists (${clientAgent._id})`);
+      }
+
+      this.logger.log('Seeding complete.');
+    } catch (error) {
+      this.logger.error('Seeding failed', error);
     }
-
-    console.log('[Seeder] Agents collection is empty, seeding...');
-
-    await this.agentModel.create({
-      name: 'Support Bot',
-      systemPrompt: 'You are a helpful support assistant.',
-      status: 'active',
-      createdBySeeder: true,
-    });
-
-    console.log('[Seeder] Agents seeded successfully');
   }
 }

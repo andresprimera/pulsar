@@ -2,19 +2,39 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { SeederService } from './seeder.service';
 import { Agent } from './schemas/agent.schema';
+import { ClientRepository } from './repositories/client.repository';
+import { AgentRepository } from './repositories/agent.repository';
+import { UserRepository } from './repositories/user.repository';
+import { ClientAgentRepository } from './repositories/client-agent.repository';
+import { Logger } from '@nestjs/common';
 
 describe('SeederService', () => {
   let service: SeederService;
   let mockAgentModel: any;
-  let consoleLogSpy: jest.SpyInstance;
+  let mockClientRepository: any;
+  let mockAgentRepository: any;
+  let mockUserRepository: any;
+  let mockClientAgentRepository: any;
+  let loggerSpy: jest.SpyInstance;
 
   beforeEach(async () => {
-    // Reset environment variable
-    delete process.env.DISABLE_AUTO_SEED;
-
     mockAgentModel = {
-      exists: jest.fn(),
-      create: jest.fn(),
+      findOne: jest.fn(),
+    };
+    mockClientRepository = {
+      findAll: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockResolvedValue({ _id: 'client-id', name: 'Acme Corp' }),
+    };
+    mockAgentRepository = {
+      create: jest.fn().mockResolvedValue({ _id: 'agent-id', name: 'Support Bot' }),
+    };
+    mockUserRepository = {
+      findByEmail: jest.fn(),
+      create: jest.fn().mockResolvedValue({ _id: 'user-id' }),
+    };
+    mockClientAgentRepository = {
+      findByClient: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockResolvedValue({ _id: 'link-id' }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -24,16 +44,21 @@ describe('SeederService', () => {
           provide: getModelToken(Agent.name),
           useValue: mockAgentModel,
         },
+        { provide: ClientRepository, useValue: mockClientRepository },
+        { provide: AgentRepository, useValue: mockAgentRepository },
+        { provide: UserRepository, useValue: mockUserRepository },
+        { provide: ClientAgentRepository, useValue: mockClientAgentRepository },
       ],
     }).compile();
 
     service = module.get<SeederService>(SeederService);
-    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
+    loggerSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
   });
 
   afterEach(() => {
-    consoleLogSpy.mockRestore();
-    delete process.env.DISABLE_AUTO_SEED;
+    jest.clearAllMocks();
+    delete process.env.NODE_ENV;
+    delete process.env.SEED_DB;
   });
 
   it('should be defined', () => {
@@ -41,46 +66,54 @@ describe('SeederService', () => {
   });
 
   describe('onApplicationBootstrap', () => {
-    it('should skip seeding when DISABLE_AUTO_SEED is true', async () => {
-      process.env.DISABLE_AUTO_SEED = 'true';
+    it('should skip seeding in PRODUCTION if SEED_DB is not true', async () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.SEED_DB;
 
       await service.onApplicationBootstrap();
 
-      expect(mockAgentModel.exists).not.toHaveBeenCalled();
-      expect(mockAgentModel.create).not.toHaveBeenCalled();
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        '[Seeder] Auto seeding disabled',
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Skipping seeding'),
       );
+      expect(mockClientRepository.create).not.toHaveBeenCalled();
     });
 
-    it('should seed agents when collection is empty', async () => {
-      mockAgentModel.exists.mockResolvedValue(null);
-      mockAgentModel.create.mockResolvedValue({});
+    it('should seed in PRODUCTION if SEED_DB is true', async () => {
+      process.env.NODE_ENV = 'production';
+      process.env.SEED_DB = 'true';
+
+      // Mock finding nothing so it attempts to create
+      mockClientRepository.findAll.mockResolvedValue([]);
+      mockAgentModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
 
       await service.onApplicationBootstrap();
 
-      expect(mockAgentModel.exists).toHaveBeenCalledWith({});
-      expect(mockAgentModel.create).toHaveBeenCalledWith({
-        name: 'Support Bot',
-        systemPrompt: 'You are a helpful support assistant.',
-        status: 'active',
-        createdBySeeder: true,
-      });
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        '[Seeder] Agents collection is empty, seeding...',
-      );
+      expect(mockClientRepository.create).toHaveBeenCalled();
     });
 
-    it('should skip seeding when agents already exist', async () => {
-      mockAgentModel.exists.mockResolvedValue({ _id: 'some-id' });
+    it('should seed in DEVELOPMENT by default', async () => {
+      process.env.NODE_ENV = 'development';
+      delete process.env.SEED_DB;
+
+       // Mock finding nothing so it attempts to create
+      mockClientRepository.findAll.mockResolvedValue([]);
+      mockAgentModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
 
       await service.onApplicationBootstrap();
 
-      expect(mockAgentModel.exists).toHaveBeenCalledWith({});
-      expect(mockAgentModel.create).not.toHaveBeenCalled();
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        '[Seeder] Agents collection has data, skipping seed',
+      expect(mockClientRepository.create).toHaveBeenCalled();
+    });
+
+    it('should skip seeding in DEVELOPMENT if SEED_DB is false', async () => {
+      process.env.NODE_ENV = 'development';
+      process.env.SEED_DB = 'false';
+
+      await service.onApplicationBootstrap();
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Skipping seeding'),
       );
+      expect(mockClientRepository.create).not.toHaveBeenCalled();
     });
   });
 });
