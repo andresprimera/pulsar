@@ -18,7 +18,7 @@ export class WhatsappController {
   @HttpCode(200)
   async handleWebhook(@Body() payload: unknown): Promise<string> {
     console.dir({ payload}, { depth: null });
-    this.whatsappService.handleIncoming(payload);
+    await this.whatsappService.handleIncoming(payload);
     return 'ok';
   }
 }
