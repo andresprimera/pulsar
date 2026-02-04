@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException, Logger } from '@nestjs/common';
 import { AgentService } from '../../agent/agent.service';
 import { AgentInput } from '../../agent/contracts/agent-input';
 import { AgentContext } from '../../agent/contracts/agent-context';
@@ -9,6 +9,8 @@ const VERIFY_TOKEN = 'test-token';
 
 @Injectable()
 export class WhatsappService {
+  private readonly logger = new Logger(WhatsappService.name);
+
   constructor(
     private readonly agentService: AgentService,
     private readonly agentChannelRepository: AgentChannelRepository,
@@ -20,6 +22,34 @@ export class WhatsappService {
       return challenge;
     }
     throw new ForbiddenException('Verification failed');
+  }
+
+  private async sendMessage(to: string, text: string): Promise<void> {
+    const url = 'http://localhost:3005/whatsapp/send';
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'text',
+        text: { body: text },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      this.logger.error(
+        `[WhatsApp] Failed to send message: ${response.status} ${errorBody}`,
+      );
+      throw new Error(`WhatsApp API error: ${response.status}`);
+    }
+
+    this.logger.log(`[WhatsApp] Message sent successfully to ${to}`);
   }
 
   async handleIncoming(payload: any): Promise<void> {
@@ -38,13 +68,21 @@ export class WhatsappService {
 
     const phoneNumberId = value.metadata?.phone_number_id;
 
+    this.logger.log(
+      `[WhatsApp] Incoming message metdata: ${JSON.stringify(value.metadata)}`,
+    );
+    this.logger.log(`[WhatsApp] Extracted phoneNumberId: ${phoneNumberId}`);
+
     const agentChannel =
       await this.agentChannelRepository.findByPhoneNumberId(phoneNumberId);
 
     if (!agentChannel) {
-      console.warn(
-        `[WhatsApp] No agent_channel found for phoneNumberId=${phoneNumberId}`,
+      this.logger.warn(
+        `[WhatsApp] No active agent_channel found for phoneNumberId=${phoneNumberId}. Check if channel exists and is active.`,
       );
+      // Debug: Attempt to find inactive channel to clarify error
+      // Note: We can't easily access the model here to check for inactive ones without extending the repository, 
+      // so we rely on the log above.
       return;
     }
 
@@ -54,7 +92,10 @@ export class WhatsappService {
       agentId: agentChannel.agentId,
       clientId: agentChannel.clientId,
       systemPrompt: agent?.systemPrompt ?? '',
-      llmConfig: agentChannel.llmConfig,
+      llmConfig: {
+        ...agentChannel.llmConfig,
+        apiKey: process.env.OPENAI_API_KEY, // TODO: Remove - temporary override for testing
+      },
       channelConfig: agentChannel.channelConfig,
     };
 
@@ -75,9 +116,11 @@ export class WhatsappService {
     const output = await this.agentService.run(input, context);
 
     if (output.reply) {
-      console.log(
+      this.logger.log(
         `[WhatsApp] Sending to ${message.from}: ${output.reply.text}`,
       );
+
+      await this.sendMessage(message.from, output.reply.text);
     }
   }
 }

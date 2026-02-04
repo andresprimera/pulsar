@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, Logger } from '@nestjs/common';
 import { WhatsappService } from './whatsapp.service';
 import { AgentService } from '../../agent/agent.service';
 import { AgentChannelRepository } from '../../database/repositories/agent-channel.repository';
@@ -10,10 +10,16 @@ describe('WhatsappService', () => {
   let agentService: jest.Mocked<AgentService>;
   let agentChannelRepository: jest.Mocked<AgentChannelRepository>;
   let agentRepository: jest.Mocked<AgentRepository>;
-  let consoleLogSpy: jest.SpyInstance;
-  let consoleWarnSpy: jest.SpyInstance;
+  let loggerLogSpy: jest.SpyInstance;
+  let loggerWarnSpy: jest.SpyInstance;
+  let fetchSpy: jest.SpyInstance;
 
   beforeEach(async () => {
+    // Mock global fetch to prevent real HTTP calls
+    fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      text: jest.fn().mockResolvedValue(''),
+    } as unknown as Response);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WhatsappService,
@@ -37,13 +43,15 @@ describe('WhatsappService', () => {
     agentChannelRepository = module.get(AgentChannelRepository);
     agentRepository = module.get(AgentRepository);
 
-    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-    consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    // Spy on Logger.prototype since a new Logger() is instantiated in the service
+    loggerLogSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    loggerWarnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
   });
 
   afterEach(() => {
-    consoleLogSpy.mockRestore();
-    consoleWarnSpy.mockRestore();
+    loggerLogSpy.mockRestore();
+    loggerWarnSpy.mockRestore();
+    fetchSpy.mockRestore();
   });
 
   it('should be defined', () => {
@@ -135,8 +143,8 @@ describe('WhatsappService', () => {
       const payload = createPayload({ metadata: { phone_number_id: 'unknown-phone' } });
       await service.handleIncoming(payload);
 
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        '[WhatsApp] No agent_channel found for phoneNumberId=unknown-phone',
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        '[WhatsApp] No active agent_channel found for phoneNumberId=unknown-phone. Check if channel exists and is active.',
       );
       expect(agentService.run).not.toHaveBeenCalled();
     });
@@ -161,7 +169,10 @@ describe('WhatsappService', () => {
           agentId: 'agent-1',
           clientId: 'client-1',
           systemPrompt: 'You are a helpful assistant.',
-          llmConfig: mockAgentChannel.llmConfig,
+          llmConfig: {
+            ...mockAgentChannel.llmConfig,
+            apiKey: process.env.OPENAI_API_KEY, // Service overrides apiKey from env
+          },
           channelConfig: mockAgentChannel.channelConfig,
         },
       );
@@ -175,7 +186,7 @@ describe('WhatsappService', () => {
       const payload = createPayload();
       await service.handleIncoming(payload);
 
-      expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect(loggerLogSpy).toHaveBeenCalledWith(
         '[WhatsApp] Sending to 1234567890: Echo response',
       );
     });
@@ -188,7 +199,7 @@ describe('WhatsappService', () => {
       const payload = createPayload();
       await service.handleIncoming(payload);
 
-      expect(consoleLogSpy).not.toHaveBeenCalledWith(
+      expect(loggerLogSpy).not.toHaveBeenCalledWith(
         expect.stringContaining('[WhatsApp] Sending to'),
       );
     });
