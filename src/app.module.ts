@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { ClientsModule } from './clients/clients.module';
 
 import { ClientAgentsModule } from './client-agents/client-agents.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { ClientAgentsModule } from './client-agents/client-agents.module';
     UsersModule,
     ClientsModule,
     ClientAgentsModule,
+    OnboardingModule,
   ],
 
 

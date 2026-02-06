@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 @Schema({ collection: 'agent_channels' })
 export class AgentChannel extends Document {
@@ -12,12 +12,23 @@ export class AgentChannel extends Document {
   @Prop({ required: true, index: true })
   channelId: string;
 
-  @Prop({ required: true, enum: ['active', 'inactive'], default: 'active' })
-  status: 'active' | 'inactive';
+  @Prop({ required: true, enum: ['active', 'inactive', 'archived'], default: 'active' })
+  status: 'active' | 'inactive' | 'archived';
 
+  /**
+   * Reference to ClientPhone for phone-based channels.
+   * Required for whatsapp/telegram channels.
+   * Phone number ownership is enforced via ClientPhone collection.
+   */
+  @Prop({ type: Types.ObjectId, index: true })
+  clientPhoneId?: Types.ObjectId;
+
+  /**
+   * Channel-specific configuration (excluding phone number).
+   * Phone numbers are now referenced via clientPhoneId.
+   */
   @Prop({ type: Object, required: true })
   channelConfig: {
-    phoneNumberId: string;
     accessToken: string;
     webhookVerifyToken: string;
   };
@@ -32,8 +43,8 @@ export class AgentChannel extends Document {
 
 export const AgentChannelSchema = SchemaFactory.createForClass(AgentChannel);
 
-// Critical: Enforce global uniqueness for WhatsApp phone number to ensure safe webhook routing
-AgentChannelSchema.index({ 'channelConfig.phoneNumberId': 1 }, { unique: true });
-
 // Enforce uniqueness for Client + Agent + Channel (Multi-Tenant)
 AgentChannelSchema.index({ clientId: 1, agentId: 1, channelId: 1 }, { unique: true });
+
+// Index for efficient phone lookups (routing webhooks)
+AgentChannelSchema.index({ clientPhoneId: 1 });

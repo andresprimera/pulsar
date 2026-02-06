@@ -79,11 +79,11 @@ describe('ClientsService', () => {
     });
   });
 
-  describe('findOne', () => {
+  describe('findById', () => {
     it('should return client by ID', async () => {
       mockClientRepository.findById.mockResolvedValue(mockClient);
 
-      const result = await service.findOne('client-1');
+      const result = await service.findById('client-1');
 
       expect(mockClientRepository.findById).toHaveBeenCalledWith('client-1');
       expect(result).toEqual(mockClient);
@@ -92,7 +92,7 @@ describe('ClientsService', () => {
     it('should throw NotFoundException for invalid ID', async () => {
       mockClientRepository.findById.mockResolvedValue(null);
 
-      await expect(service.findOne('unknown')).rejects.toThrow(
+      await expect(service.findById('unknown')).rejects.toThrow(
         NotFoundException,
       );
     });

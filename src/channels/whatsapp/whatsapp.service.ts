@@ -4,6 +4,7 @@ import { AgentInput } from '../../agent/contracts/agent-input';
 import { AgentContext } from '../../agent/contracts/agent-context';
 import { AgentChannelRepository } from '../../database/repositories/agent-channel.repository';
 import { AgentRepository } from '../../database/repositories/agent.repository';
+import { ClientPhoneRepository } from '../../database/repositories/client-phone.repository';
 
 const VERIFY_TOKEN = 'test-token';
 
@@ -15,6 +16,7 @@ export class WhatsappService {
     private readonly agentService: AgentService,
     private readonly agentChannelRepository: AgentChannelRepository,
     private readonly agentRepository: AgentRepository,
+    private readonly clientPhoneRepository: ClientPhoneRepository,
   ) {}
 
   verifyWebhook(mode: string, token: string, challenge: string): string {
@@ -73,16 +75,25 @@ export class WhatsappService {
     );
     this.logger.log(`[WhatsApp] Extracted phoneNumberId: ${phoneNumberId}`);
 
+    // Find the ClientPhone by phoneNumberId
+    const clientPhone =
+      await this.clientPhoneRepository.findByPhoneNumber(phoneNumberId);
+
+    if (!clientPhone) {
+      this.logger.warn(
+        `[WhatsApp] No ClientPhone found for phoneNumberId=${phoneNumberId}. Phone may not be registered.`,
+      );
+      return;
+    }
+
+    // Find AgentChannel by clientPhoneId
     const agentChannel =
-      await this.agentChannelRepository.findByPhoneNumberId(phoneNumberId);
+      await this.agentChannelRepository.findByClientPhoneId(clientPhone._id);
 
     if (!agentChannel) {
       this.logger.warn(
-        `[WhatsApp] No active agent_channel found for phoneNumberId=${phoneNumberId}. Check if channel exists and is active.`,
+        `[WhatsApp] No active agent_channel found for clientPhoneId=${clientPhone._id}. Check if channel exists and is active.`,
       );
-      // Debug: Attempt to find inactive channel to clarify error
-      // Note: We can't easily access the model here to check for inactive ones without extending the repository, 
-      // so we rely on the log above.
       return;
     }
 

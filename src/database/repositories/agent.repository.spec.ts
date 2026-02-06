@@ -191,7 +191,9 @@ describe('AgentRepository', () => {
     it('should return agent when active', async () => {
       const activeAgent = { ...mockAgent, status: 'active' };
       mockModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(activeAgent),
+        session: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(activeAgent),
+        }),
       });
 
       const result = await repository.validateHireable('agent-1');
@@ -201,7 +203,9 @@ describe('AgentRepository', () => {
 
     it('should throw BadRequestException when agent not found', async () => {
       mockModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(null),
+        session: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(null),
+        }),
       });
 
       await expect(repository.validateHireable('unknown')).rejects.toThrow(
@@ -212,7 +216,9 @@ describe('AgentRepository', () => {
     it('should throw BadRequestException when agent is inactive', async () => {
       const inactiveAgent = { ...mockAgent, status: 'inactive' };
       mockModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(inactiveAgent),
+        session: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(inactiveAgent),
+        }),
       });
 
       await expect(repository.validateHireable('agent-1')).rejects.toThrow(
@@ -223,7 +229,9 @@ describe('AgentRepository', () => {
     it('should throw BadRequestException when agent is archived', async () => {
       const archivedAgent = { ...mockAgent, status: 'archived' };
       mockModel.findById.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(archivedAgent),
+        session: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(archivedAgent),
+        }),
       });
 
       await expect(repository.validateHireable('agent-1')).rejects.toThrow(

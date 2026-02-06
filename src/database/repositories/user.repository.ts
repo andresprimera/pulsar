@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 import { User } from '../schemas/user.schema';
 
 @Injectable()
@@ -10,8 +10,9 @@ export class UserRepository {
     private readonly model: Model<User>,
   ) {}
 
-  async create(data: Partial<User>): Promise<User> {
-    return this.model.create(data);
+  async create(data: Partial<User>, session?: ClientSession): Promise<User> {
+    const [doc] = await this.model.create([data], { session });
+    return doc;
   }
 
   async findAll(): Promise<User[]> {
@@ -22,8 +23,8 @@ export class UserRepository {
     return this.model.findById(id).exec();
   }
 
-  async findByEmail(email: string): Promise<User | null> {
-    return this.model.findOne({ email }).exec();
+  async findByEmail(email: string, session?: ClientSession): Promise<User | null> {
+    return this.model.findOne({ email }).session(session).exec();
   }
 
   async findByStatus(

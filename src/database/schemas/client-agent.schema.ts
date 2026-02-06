@@ -24,3 +24,6 @@ export class ClientAgent extends Document {
 }
 
 export const ClientAgentSchema = SchemaFactory.createForClass(ClientAgent);
+
+// Prevent hiring the same agent twice for the same client
+ClientAgentSchema.index({ clientId: 1, agentId: 1 }, { unique: true });

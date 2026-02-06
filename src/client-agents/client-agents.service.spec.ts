@@ -1,13 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { ClientAgentsService } from './client-agents.service';
 import { ClientAgentRepository } from '../database/repositories/client-agent.repository';
+import { AgentChannelRepository } from '../database/repositories/agent-channel.repository';
 import { ClientsService } from '../clients/clients.service';
 import { AgentsService } from '../agents/agents.service';
 
 describe('ClientAgentsService', () => {
   let service: ClientAgentsService;
   let mockClientAgentRepository: any;
+  let mockAgentChannelRepository: any;
   let mockClientsService: any;
   let mockAgentsService: any;
 
@@ -33,13 +35,18 @@ describe('ClientAgentsService', () => {
     mockClientAgentRepository = {
       create: jest.fn(),
       findByClient: jest.fn(),
+      findByClientAndAgent: jest.fn(),
       findByClientAndStatus: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),
     };
 
+    mockAgentChannelRepository = {
+      archiveByClientAndAgent: jest.fn().mockResolvedValue(0),
+    };
+
     mockClientsService = {
-      findOne: jest.fn(),
+      findById: jest.fn(),
     };
 
     mockAgentsService = {
@@ -52,6 +59,10 @@ describe('ClientAgentsService', () => {
         {
           provide: ClientAgentRepository,
           useValue: mockClientAgentRepository,
+        },
+        {
+          provide: AgentChannelRepository,
+          useValue: mockAgentChannelRepository,
         },
         {
           provide: ClientsService,
@@ -73,15 +84,17 @@ describe('ClientAgentsService', () => {
 
   describe('create', () => {
     it('should create client agent if client and agent are active', async () => {
-      mockClientsService.findOne.mockResolvedValue(mockClient);
+      mockClientsService.findById.mockResolvedValue(mockClient);
       mockAgentsService.findOne.mockResolvedValue(mockAgent);
+      mockClientAgentRepository.findByClientAndAgent.mockResolvedValue(null);
       mockClientAgentRepository.create.mockResolvedValue(mockClientAgent);
 
       const dto = { clientId: 'client-1', agentId: 'agent-1', price: 100 };
       const result = await service.create(dto);
 
-      expect(mockClientsService.findOne).toHaveBeenCalledWith('client-1');
+      expect(mockClientsService.findById).toHaveBeenCalledWith('client-1');
       expect(mockAgentsService.findOne).toHaveBeenCalledWith('agent-1');
+      expect(mockClientAgentRepository.findByClientAndAgent).toHaveBeenCalledWith('client-1', 'agent-1');
       expect(mockClientAgentRepository.create).toHaveBeenCalledWith({
         ...dto,
         status: 'active',
@@ -90,33 +103,57 @@ describe('ClientAgentsService', () => {
     });
 
     it('should throw BadRequestException if client is not found', async () => {
-      mockClientsService.findOne.mockResolvedValue(null);
-      
+      mockClientsService.findById.mockResolvedValue(null);
+
       const dto = { clientId: 'unknown', agentId: 'agent-1', price: 100 };
       await expect(service.create(dto)).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException if client is archived', async () => {
-      mockClientsService.findOne.mockResolvedValue({ ...mockClient, status: 'archived' });
-      
+      mockClientsService.findById.mockResolvedValue({ ...mockClient, status: 'archived' });
+
       const dto = { clientId: 'client-1', agentId: 'agent-1', price: 100 };
       await expect(service.create(dto)).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException if agent is not found', async () => {
-      mockClientsService.findOne.mockResolvedValue(mockClient);
+      mockClientsService.findById.mockResolvedValue(mockClient);
       mockAgentsService.findOne.mockResolvedValue(null);
-      
+
       const dto = { clientId: 'client-1', agentId: 'unknown', price: 100 };
       await expect(service.create(dto)).rejects.toThrow(BadRequestException);
     });
 
-     it('should throw BadRequestException if agent is archived', async () => {
-      mockClientsService.findOne.mockResolvedValue(mockClient);
+    it('should throw BadRequestException if agent is archived', async () => {
+      mockClientsService.findById.mockResolvedValue(mockClient);
       mockAgentsService.findOne.mockResolvedValue({ ...mockAgent, status: 'archived' });
-      
+
       const dto = { clientId: 'client-1', agentId: 'agent-1', price: 100 };
       await expect(service.create(dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw ConflictException if agent already hired by client', async () => {
+      mockClientsService.findById.mockResolvedValue(mockClient);
+      mockAgentsService.findOne.mockResolvedValue(mockAgent);
+      mockClientAgentRepository.findByClientAndAgent.mockResolvedValue(mockClientAgent);
+
+      const dto = { clientId: 'client-1', agentId: 'agent-1', price: 100 };
+      await expect(service.create(dto)).rejects.toThrow(ConflictException);
+    });
+
+    it('should allow re-hiring archived agent relationship', async () => {
+      mockClientsService.findById.mockResolvedValue(mockClient);
+      mockAgentsService.findOne.mockResolvedValue(mockAgent);
+      mockClientAgentRepository.findByClientAndAgent.mockResolvedValue({
+        ...mockClientAgent,
+        status: 'archived',
+      });
+      mockClientAgentRepository.create.mockResolvedValue(mockClientAgent);
+
+      const dto = { clientId: 'client-1', agentId: 'agent-1', price: 100 };
+      const result = await service.create(dto);
+
+      expect(result).toEqual(mockClientAgent);
     });
   });
 
@@ -152,13 +189,27 @@ describe('ClientAgentsService', () => {
   });
 
   describe('updateStatus', () => {
-    it('should update status', async () => {
+    it('should update status to inactive without cascading', async () => {
       mockClientAgentRepository.findById.mockResolvedValue(mockClientAgent);
       mockClientAgentRepository.update.mockResolvedValue({ ...mockClientAgent, status: 'inactive' });
 
       const result = await service.updateStatus('ca-1', { status: 'inactive' });
+
       expect(mockClientAgentRepository.update).toHaveBeenCalledWith('ca-1', { status: 'inactive' });
+      expect(mockAgentChannelRepository.archiveByClientAndAgent).not.toHaveBeenCalled();
       expect(result.status).toBe('inactive');
+    });
+
+    it('should cascade archive to related AgentChannels when archiving', async () => {
+      mockClientAgentRepository.findById.mockResolvedValue(mockClientAgent);
+      mockClientAgentRepository.update.mockResolvedValue({ ...mockClientAgent, status: 'archived' });
+      mockAgentChannelRepository.archiveByClientAndAgent.mockResolvedValue(2);
+
+      const result = await service.updateStatus('ca-1', { status: 'archived' });
+
+      expect(mockClientAgentRepository.update).toHaveBeenCalledWith('ca-1', { status: 'archived' });
+      expect(mockAgentChannelRepository.archiveByClientAndAgent).toHaveBeenCalledWith('client-1', 'agent-1');
+      expect(result.status).toBe('archived');
     });
 
     it('should throw BadRequestException if already archived', async () => {

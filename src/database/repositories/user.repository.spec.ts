@@ -44,11 +44,11 @@ describe('UserRepository', () => {
 
   describe('create', () => {
     it('should create and return new user', async () => {
-      mockModel.create.mockResolvedValue(mockUser);
+      mockModel.create.mockResolvedValue([mockUser]);
 
       const result = await repository.create(mockUser);
 
-      expect(mockModel.create).toHaveBeenCalledWith(mockUser);
+      expect(mockModel.create).toHaveBeenCalledWith([mockUser], { session: undefined });
       expect(result).toEqual(mockUser);
     });
   });
@@ -92,7 +92,9 @@ describe('UserRepository', () => {
   describe('findByEmail', () => {
     it('should return user when exists', async () => {
       mockModel.findOne.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(mockUser),
+        session: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(mockUser),
+        }),
       });
 
       const result = await repository.findByEmail('test@example.com');
@@ -103,7 +105,9 @@ describe('UserRepository', () => {
 
     it('should return null when not exists', async () => {
       mockModel.findOne.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(null),
+        session: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(null),
+        }),
       });
 
       const result = await repository.findByEmail('unknown@example.com');

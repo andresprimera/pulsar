@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
+import { Types } from 'mongoose';
 import { AgentChannelRepository } from './agent-channel.repository';
 import { AgentChannel } from '../schemas/agent-channel.schema';
 
@@ -7,14 +8,15 @@ describe('AgentChannelRepository', () => {
   let repository: AgentChannelRepository;
   let mockModel: any;
 
+  const mockClientPhoneId = new Types.ObjectId('aaaaaaaaaaaaaaaaaaaaaaaa');
   const mockAgentChannel = {
     _id: 'ac-1',
     clientId: 'client-1',
     agentId: 'agent-1',
     channelType: 'whatsapp',
     enabled: true,
+    clientPhoneId: mockClientPhoneId,
     channelConfig: {
-      phoneNumberId: 'phone123',
       accessToken: 'mock-token',
       webhookVerifyToken: 'test-token',
     },
@@ -31,10 +33,15 @@ describe('AgentChannelRepository', () => {
         exec: jest.fn().mockResolvedValue(mockAgentChannel),
       }),
       find: jest.fn().mockReturnValue({
+        session: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue([mockAgentChannel]),
+        }),
         exec: jest.fn().mockResolvedValue([mockAgentChannel]),
       }),
       findOne: jest.fn().mockReturnValue({
-        exec: jest.fn().mockResolvedValue(mockAgentChannel),
+        session: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(mockAgentChannel),
+        }),
       }),
     };
 
@@ -83,25 +90,70 @@ describe('AgentChannelRepository', () => {
     });
   });
 
-  describe('findByPhoneNumberId', () => {
-    it('should return enabled whatsapp channel for valid phoneNumberId', async () => {
-      const result = await repository.findByPhoneNumberId('phone123');
+  describe('findByClientPhoneId', () => {
+    it('should return agent channel for valid clientPhoneId (global lookup)', async () => {
+      const result = await repository.findByClientPhoneId(mockClientPhoneId);
 
       expect(mockModel.findOne).toHaveBeenCalledWith({
-        'channelConfig.phoneNumberId': 'phone123',
-        status: 'active',
+        clientPhoneId: mockClientPhoneId,
       });
       expect(result).toEqual(mockAgentChannel);
     });
 
-    it('should return null for unknown phoneNumberId', async () => {
-      mockModel.findOne.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(null),
+    it('should accept string clientPhoneId and convert to ObjectId', async () => {
+      const result = await repository.findByClientPhoneId('aaaaaaaaaaaaaaaaaaaaaaaa');
+
+      expect(mockModel.findOne).toHaveBeenCalledWith({
+        clientPhoneId: expect.any(Types.ObjectId),
+      });
+      expect(result).toEqual(mockAgentChannel);
+    });
+
+    it('should scope query by clientId when provided', async () => {
+      const result = await repository.findByClientPhoneId(mockClientPhoneId, {
+        clientId: 'client-1',
       });
 
-      const result = await repository.findByPhoneNumberId('unknown-phone');
+      expect(mockModel.findOne).toHaveBeenCalledWith({
+        clientPhoneId: mockClientPhoneId,
+        clientId: 'client-1',
+      });
+      expect(result).toEqual(mockAgentChannel);
+    });
+
+    it('should return null for unknown clientPhoneId', async () => {
+      mockModel.findOne.mockReturnValue({
+        session: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(null),
+        }),
+      });
+
+      const unknownId = new Types.ObjectId();
+      const result = await repository.findByClientPhoneId(unknownId);
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('findAllByClientPhoneId', () => {
+    it('should return all agent channels for a clientPhoneId', async () => {
+      const result = await repository.findAllByClientPhoneId(mockClientPhoneId);
+
+      expect(mockModel.find).toHaveBeenCalledWith({
+        clientPhoneId: mockClientPhoneId,
+      });
+      expect(result).toEqual([mockAgentChannel]);
+    });
+
+    it('should scope query by clientId when provided', async () => {
+      const result = await repository.findAllByClientPhoneId(mockClientPhoneId, {
+        clientId: 'client-1',
+      });
+
+      expect(mockModel.find).toHaveBeenCalledWith({
+        clientPhoneId: mockClientPhoneId,
+        clientId: 'client-1',
+      });
     });
   });
 });

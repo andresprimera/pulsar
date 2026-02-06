@@ -26,7 +26,7 @@ export class ClientsService {
     return this.clientRepository.findAll();
   }
 
-  async findOne(id: string) {
+  async findById(id: string) {
     const client = await this.clientRepository.findById(id);
     if (!client) {
       throw new NotFoundException('Client not found');
@@ -35,7 +35,7 @@ export class ClientsService {
   }
 
   async update(id: string, dto: UpdateClientDto) {
-    const existing = await this.findOne(id);
+    const existing = await this.findById(id);
 
     if (existing.status === 'archived') {
       throw new BadRequestException('Archived clients cannot be modified');
@@ -50,7 +50,7 @@ export class ClientsService {
   }
 
   async updateStatus(id: string, dto: UpdateClientStatusDto) {
-    const existing = await this.findOne(id);
+    const existing = await this.findById(id);
 
     if (existing.status === 'archived') {
       throw new BadRequestException('Archived clients cannot be modified');

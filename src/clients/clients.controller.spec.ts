@@ -16,7 +16,7 @@ describe('ClientsController', () => {
     mockClientsService = {
       create: jest.fn(),
       findAll: jest.fn(),
-      findOne: jest.fn(),
+      findById: jest.fn(),
       update: jest.fn(),
       updateStatus: jest.fn(),
     };
@@ -71,12 +71,12 @@ describe('ClientsController', () => {
   });
 
   describe('GET /clients/:id', () => {
-    it('should call service.findOne', async () => {
-      mockClientsService.findOne.mockResolvedValue(mockClient);
+    it('should call service.findById', async () => {
+      mockClientsService.findById.mockResolvedValue(mockClient);
 
       const result = await controller.findOne('client-1');
 
-      expect(mockClientsService.findOne).toHaveBeenCalledWith('client-1');
+      expect(mockClientsService.findById).toHaveBeenCalledWith('client-1');
       expect(result).toEqual(mockClient);
     });
   });

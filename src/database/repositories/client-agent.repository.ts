@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { ClientSession, Model } from 'mongoose';
 import { ClientAgent } from '../schemas/client-agent.schema';
 
 @Injectable()
@@ -18,13 +18,20 @@ export class ClientAgentRepository {
     return this.model.find().exec();
   }
 
-  async create(data: Partial<ClientAgent>): Promise<ClientAgent> {
-    const newClientAgent = new this.model(data);
-    return newClientAgent.save();
+  async create(data: Partial<ClientAgent>, session?: ClientSession): Promise<ClientAgent> {
+    const [doc] = await this.model.create([data], { session });
+    return doc;
   }
 
   async findByClient(clientId: string): Promise<ClientAgent[]> {
     return this.model.find({ clientId }).exec();
+  }
+
+  async findByClientAndAgent(
+    clientId: string,
+    agentId: string,
+  ): Promise<ClientAgent | null> {
+    return this.model.findOne({ clientId, agentId }).exec();
   }
 
   async findByClientAndStatus(

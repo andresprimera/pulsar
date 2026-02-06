@@ -7,6 +7,7 @@ import { UserRepository } from './repositories/user.repository';
 import { ClientAgentRepository } from './repositories/client-agent.repository';
 import { ChannelRepository } from './repositories/channel.repository';
 import { AgentChannelRepository } from './repositories/agent-channel.repository';
+import { ClientPhoneRepository } from './repositories/client-phone.repository';
 import { Agent } from './schemas/agent.schema';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class SeederService implements OnApplicationBootstrap {
     private readonly clientAgentRepository: ClientAgentRepository,
     private readonly channelRepository: ChannelRepository,
     private readonly agentChannelRepository: AgentChannelRepository,
+    private readonly clientPhoneRepository: ClientPhoneRepository,
     @InjectModel(Agent.name)
     private readonly agentModel: Model<Agent>,
   ) {}
@@ -111,14 +113,22 @@ export class SeederService implements OnApplicationBootstrap {
       });
       this.logger.log(`Ensure Channel: WhatsApp (${channel._id})`);
 
-      // 6. AgentChannel (WhatsApp Link)
+      // 6. ClientPhone (Phone number ownership)
+      const clientPhone = await this.clientPhoneRepository.resolveOrCreate(
+        client._id as Types.ObjectId,
+        '1234567890',
+        { provider: 'meta' },
+      );
+      this.logger.log(`Ensure ClientPhone: 1234567890 (${clientPhone._id})`);
+
+      // 7. AgentChannel (WhatsApp Link)
       const agentChannel = await this.agentChannelRepository.findOrCreate({
           agentId: agent._id as string,
           clientId: client._id as string,
           channelId: channel._id as string,
           status: 'active',
+          clientPhoneId: clientPhone._id as Types.ObjectId,
           channelConfig: {
-            phoneNumberId: '1234567890',
             accessToken: '__REPLACE_ME_ACCESS_TOKEN__',
             webhookVerifyToken: '__REPLACE_ME_VERIFY_TOKEN__',
           },

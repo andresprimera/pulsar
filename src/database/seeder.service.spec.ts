@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
+import { Types } from 'mongoose';
 import { SeederService } from './seeder.service';
 import { Agent } from './schemas/agent.schema';
 import { ClientRepository } from './repositories/client.repository';
@@ -8,6 +9,7 @@ import { UserRepository } from './repositories/user.repository';
 import { ClientAgentRepository } from './repositories/client-agent.repository';
 import { ChannelRepository } from './repositories/channel.repository';
 import { AgentChannelRepository } from './repositories/agent-channel.repository';
+import { ClientPhoneRepository } from './repositories/client-phone.repository';
 import { Logger } from '@nestjs/common';
 
 describe('SeederService', () => {
@@ -19,7 +21,16 @@ describe('SeederService', () => {
   let mockClientAgentRepository: any;
   let mockChannelRepository: any;
   let mockAgentChannelRepository: any;
+  let mockClientPhoneRepository: any;
   let loggerSpy: jest.SpyInstance;
+
+  const mockClientPhoneId = new Types.ObjectId('aaaaaaaaaaaaaaaaaaaaaaaa');
+  const mockClientPhone = {
+    _id: mockClientPhoneId,
+    clientId: new Types.ObjectId('bbbbbbbbbbbbbbbbbbbbbbbb'),
+    phoneNumberId: '1234567890',
+    provider: 'meta',
+  };
 
   beforeEach(async () => {
     mockAgentModel = {
@@ -46,6 +57,9 @@ describe('SeederService', () => {
     mockAgentChannelRepository = {
         findOrCreate: jest.fn().mockResolvedValue({ _id: 'agent-channel-id' }),
     };
+    mockClientPhoneRepository = {
+      resolveOrCreate: jest.fn().mockResolvedValue(mockClientPhone),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -60,6 +74,7 @@ describe('SeederService', () => {
         { provide: ClientAgentRepository, useValue: mockClientAgentRepository },
         { provide: ChannelRepository, useValue: mockChannelRepository },
         { provide: AgentChannelRepository, useValue: mockAgentChannelRepository },
+        { provide: ClientPhoneRepository, useValue: mockClientPhoneRepository },
       ],
     }).compile();
 
@@ -114,24 +129,31 @@ describe('SeederService', () => {
       await service.onApplicationBootstrap();
 
       expect(mockClientRepository.create).toHaveBeenCalled();
-      
+
+      // Verify ClientPhone creation
+      expect(mockClientPhoneRepository.resolveOrCreate).toHaveBeenCalledWith(
+        'client-id',
+        '1234567890',
+        { provider: 'meta' },
+      );
+
       // Verify WhatsApp Channel seeding
       expect(mockChannelRepository.findOrCreateByName).toHaveBeenCalledWith(
-        'WhatsApp', 
+        'WhatsApp',
         expect.objectContaining({
           name: 'WhatsApp',
           type: 'whatsapp'
         })
       );
-      
-      // Verify AgentChannel linking
+
+      // Verify AgentChannel linking with clientPhoneId (no phoneNumberId in channelConfig)
       expect(mockAgentChannelRepository.findOrCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           clientId: 'client-id',
           channelId: 'channel-id',
           status: 'active',
+          clientPhoneId: mockClientPhoneId,
           channelConfig: expect.objectContaining({
-            phoneNumberId: '1234567890',
             accessToken: '__REPLACE_ME_ACCESS_TOKEN__'
           })
         })

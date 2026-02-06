@@ -1,11 +1,26 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 @Schema({ collection: 'clients', timestamps: true })
 
 export class Client extends Document {
   @Prop({ required: true })
   name: string;
+
+  @Prop({
+    required: true,
+    enum: ['individual', 'organization'],
+    default: 'organization',
+    index: true,
+  })
+  type: 'individual' | 'organization';
+
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'User',
+    index: true,
+  })
+  ownerUserId?: Types.ObjectId;
 
   @Prop({
     required: true,

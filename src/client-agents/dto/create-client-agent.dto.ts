@@ -1,4 +1,4 @@
-import { IsEnum, IsMongoId, IsNotEmpty, IsNumber, Min } from 'class-validator';
+import { IsInt, IsMongoId, IsNotEmpty, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateClientAgentDto {
@@ -11,7 +11,7 @@ export class CreateClientAgentDto {
   agentId: string;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(0)
   @IsNotEmpty()
   price: number;

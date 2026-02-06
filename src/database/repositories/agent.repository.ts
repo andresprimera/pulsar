@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { ClientSession, Model } from 'mongoose';
 import { Agent } from '../schemas/agent.schema';
 
 @Injectable()
@@ -43,8 +43,8 @@ export class AgentRepository {
    * Use this when creating new AgentChannel bindings.
    * Throws BadRequestException if agent cannot be hired.
    */
-  async validateHireable(agentId: string): Promise<Agent> {
-    const agent = await this.model.findById(agentId).exec();
+  async validateHireable(agentId: string, session?: ClientSession): Promise<Agent> {
+    const agent = await this.model.findById(agentId).session(session).exec();
 
     if (!agent) {
       console.log(`[Agent] Hire rejected - agent ${agentId} not found`);
