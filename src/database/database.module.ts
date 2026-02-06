@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Client, ClientSchema } from './schemas/client.schema';
@@ -19,6 +19,7 @@ import { ClientPhoneRepository } from './repositories/client-phone.repository';
 import { SeederService } from './seeder.service';
 import { User, UserSchema } from './schemas/user.schema';
 import { UserRepository } from './repositories/user.repository';
+import { OnboardingModule } from '../onboarding/onboarding.module';
 
 const repositories = [
   ClientRepository,
@@ -52,7 +53,7 @@ const repositories = [
       { name: ClientPhone.name, schema: ClientPhoneSchema },
       { name: User.name, schema: UserSchema },
     ]),
-
+    forwardRef(() => OnboardingModule),
   ],
   providers: [...repositories, SeederService],
   exports: repositories,

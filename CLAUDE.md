@@ -112,7 +112,7 @@ The project follows a strict layered structure:
 ## 8. Scope Discipline
 
 - Implement ONLY what is requested
-- Do NOT add “nice to have” improvements
+- Do NOT add "nice to have" improvements
 - Do NOT refactor unrelated code
 - Do NOT introduce auth, caching, queues, or async jobs unless explicitly requested
 

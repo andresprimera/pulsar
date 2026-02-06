@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, BadRequestException } from '@nestjs/common';
+import { ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { getConnectionToken } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
 import { OnboardingService } from './onboarding.service';
@@ -134,7 +134,8 @@ describe('OnboardingService', () => {
     };
 
     mockChannelRepository = {
-      findOrCreateByName: jest.fn().mockResolvedValue(mockChannel),
+      findByNameOrFail: jest.fn().mockResolvedValue(mockChannel),
+      create: jest.fn(),
     };
 
     mockClientAgentRepository = {
@@ -443,7 +444,7 @@ describe('OnboardingService', () => {
 
       await service.registerAndHire(multiChannelDto);
 
-      expect(mockChannelRepository.findOrCreateByName).toHaveBeenCalledTimes(2);
+      expect(mockChannelRepository.findByNameOrFail).toHaveBeenCalledTimes(2);
       expect(mockAgentChannelRepository.create).toHaveBeenCalledTimes(2);
     });
 
@@ -455,6 +456,24 @@ describe('OnboardingService', () => {
         expect.objectContaining({ ownerUserId: expect.anything() }),
         mockSession,
       );
+    });
+
+    it('should throw NotFoundException if channel does not exist', async () => {
+      mockChannelRepository.findByNameOrFail.mockRejectedValue(
+        new NotFoundException('Channel not found'),
+      );
+
+      await expect(service.registerAndHire(validDto)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('does not create channels during onboarding (Invariant)', async () => {
+      mockChannelRepository.findByNameOrFail.mockResolvedValue(mockChannel);
+
+      await service.registerAndHire(validDto);
+
+      expect(mockChannelRepository.create).not.toHaveBeenCalled();
     });
   });
 });

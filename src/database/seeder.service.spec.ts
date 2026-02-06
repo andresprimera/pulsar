@@ -3,62 +3,70 @@ import { getModelToken } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
 import { SeederService } from './seeder.service';
 import { Agent } from './schemas/agent.schema';
-import { ClientRepository } from './repositories/client.repository';
-import { AgentRepository } from './repositories/agent.repository';
 import { UserRepository } from './repositories/user.repository';
-import { ClientAgentRepository } from './repositories/client-agent.repository';
 import { ChannelRepository } from './repositories/channel.repository';
-import { AgentChannelRepository } from './repositories/agent-channel.repository';
-import { ClientPhoneRepository } from './repositories/client-phone.repository';
+import { OnboardingService } from '../onboarding/onboarding.service';
 import { Logger } from '@nestjs/common';
 
 describe('SeederService', () => {
   let service: SeederService;
   let mockAgentModel: any;
-  let mockClientRepository: any;
-  let mockAgentRepository: any;
   let mockUserRepository: any;
-  let mockClientAgentRepository: any;
+  let mockOnboardingService: any;
   let mockChannelRepository: any;
-  let mockAgentChannelRepository: any;
-  let mockClientPhoneRepository: any;
   let loggerSpy: jest.SpyInstance;
 
-  const mockClientPhoneId = new Types.ObjectId('aaaaaaaaaaaaaaaaaaaaaaaa');
-  const mockClientPhone = {
-    _id: mockClientPhoneId,
-    clientId: new Types.ObjectId('bbbbbbbbbbbbbbbbbbbbbbbb'),
-    phoneNumberId: '1234567890',
-    provider: 'meta',
+  const mockAgentId = new Types.ObjectId('aaaaaaaaaaaaaaaaaaaaaaaa');
+
+  const mockOnboardingResult = {
+    user: {
+      _id: 'user-id',
+      email: 'john.doe@pulsar.com',
+      name: 'John Doe',
+      clientId: 'client-id',
+      status: 'active',
+    },
+    client: {
+      _id: 'client-id',
+      type: 'individual',
+      name: 'John Doe',
+      ownerUserId: 'user-id',
+      status: 'active',
+    },
+    clientAgent: {
+      _id: 'client-agent-id',
+      clientId: 'client-id',
+      agentId: mockAgentId.toString(),
+      price: 100,
+      status: 'active',
+    },
+    agentChannels: [
+      {
+        _id: 'agent-channel-id',
+        clientId: 'client-id',
+        agentId: mockAgentId.toString(),
+        channelId: 'channel-id',
+        status: 'active',
+      },
+    ],
   };
 
   beforeEach(async () => {
     mockAgentModel = {
       findOne: jest.fn(),
+      create: jest.fn(),
     };
-    mockClientRepository = {
-      findAll: jest.fn().mockResolvedValue([]),
-      create: jest.fn().mockResolvedValue({ _id: 'client-id', name: 'Acme Corp' }),
-    };
-    mockAgentRepository = {
-      create: jest.fn().mockResolvedValue({ _id: 'agent-id', name: 'Support Bot' }),
-    };
+
     mockUserRepository = {
       findByEmail: jest.fn(),
-      create: jest.fn().mockResolvedValue({ _id: 'user-id' }),
     };
-    mockClientAgentRepository = {
-      findByClient: jest.fn().mockResolvedValue([]),
-      create: jest.fn().mockResolvedValue({ _id: 'link-id' }),
+
+    mockOnboardingService = {
+      registerAndHire: jest.fn().mockResolvedValue(mockOnboardingResult),
     };
+
     mockChannelRepository = {
-        findOrCreateByName: jest.fn().mockResolvedValue({ _id: 'channel-id', name: 'WhatsApp' }),
-    };
-    mockAgentChannelRepository = {
-        findOrCreate: jest.fn().mockResolvedValue({ _id: 'agent-channel-id' }),
-    };
-    mockClientPhoneRepository = {
-      resolveOrCreate: jest.fn().mockResolvedValue(mockClientPhone),
+      findOrCreateByName: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -68,13 +76,9 @@ describe('SeederService', () => {
           provide: getModelToken(Agent.name),
           useValue: mockAgentModel,
         },
-        { provide: ClientRepository, useValue: mockClientRepository },
-        { provide: AgentRepository, useValue: mockAgentRepository },
         { provide: UserRepository, useValue: mockUserRepository },
-        { provide: ClientAgentRepository, useValue: mockClientAgentRepository },
+        { provide: OnboardingService, useValue: mockOnboardingService },
         { provide: ChannelRepository, useValue: mockChannelRepository },
-        { provide: AgentChannelRepository, useValue: mockAgentChannelRepository },
-        { provide: ClientPhoneRepository, useValue: mockClientPhoneRepository },
       ],
     }).compile();
 
@@ -102,61 +106,85 @@ describe('SeederService', () => {
       expect(loggerSpy).toHaveBeenCalledWith(
         expect.stringContaining('Skipping seeding'),
       );
-      expect(mockClientRepository.create).not.toHaveBeenCalled();
+      expect(mockOnboardingService.registerAndHire).not.toHaveBeenCalled();
     });
 
     it('should seed in PRODUCTION if SEED_DB is true', async () => {
       process.env.NODE_ENV = 'production';
       process.env.SEED_DB = 'true';
 
-      // Mock finding nothing so it attempts to create
-      mockClientRepository.findAll.mockResolvedValue([]);
+      // No existing user
+      mockUserRepository.findByEmail.mockResolvedValue(null);
+      // No existing agent
       mockAgentModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+      mockAgentModel.create.mockResolvedValue({ _id: mockAgentId, name: 'Support Bot' });
 
       await service.onApplicationBootstrap();
 
-      expect(mockClientRepository.create).toHaveBeenCalled();
+      expect(mockOnboardingService.registerAndHire).toHaveBeenCalled();
     });
 
     it('should seed in DEVELOPMENT by default', async () => {
       process.env.NODE_ENV = 'development';
       delete process.env.SEED_DB;
 
-       // Mock finding nothing so it attempts to create
-      mockClientRepository.findAll.mockResolvedValue([]);
+      // No existing user
+      mockUserRepository.findByEmail.mockResolvedValue(null);
+      // No existing agent
       mockAgentModel.findOne.mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+      mockAgentModel.create.mockResolvedValue({ _id: mockAgentId, name: 'Support Bot' });
 
       await service.onApplicationBootstrap();
 
-      expect(mockClientRepository.create).toHaveBeenCalled();
-
-      // Verify ClientPhone creation
-      expect(mockClientPhoneRepository.resolveOrCreate).toHaveBeenCalledWith(
-        'client-id',
-        '1234567890',
-        { provider: 'meta' },
+      // Verify agent creation
+      expect(mockAgentModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Support Bot',
+          systemPrompt: 'You are a helpful support assistant.',
+          status: 'active',
+          createdBySeeder: true,
+        }),
       );
 
-      // Verify WhatsApp Channel seeding
+      // Verify onboarding was called with correct DTO
+      expect(mockOnboardingService.registerAndHire).toHaveBeenCalledWith({
+        user: {
+          email: 'john.doe@pulsar.com',
+          name: 'John Doe',
+        },
+        client: {
+          type: 'individual',
+        },
+        agentHiring: {
+          agentId: mockAgentId.toString(),
+          price: 100,
+        },
+        channels: [
+          {
+            name: 'WhatsApp',
+            type: 'whatsapp',
+            provider: 'meta',
+            agentChannelConfig: {
+              status: 'active',
+              channelConfig: {
+                phoneNumberId: '1234567890',
+                accessToken: '__REPLACE_ME_ACCESS_TOKEN__',
+                webhookVerifyToken: '__REPLACE_ME_VERIFY_TOKEN__',
+              },
+              llmConfig: {
+                provider: 'openai',
+                apiKey: '__REPLACE_ME_API_KEY__',
+                model: 'gpt-4o',
+              },
+            },
+          },
+        ],
+      });
+
+      // Verify channel provisioning
       expect(mockChannelRepository.findOrCreateByName).toHaveBeenCalledWith(
         'WhatsApp',
-        expect.objectContaining({
-          name: 'WhatsApp',
-          type: 'whatsapp'
-        })
-      );
-
-      // Verify AgentChannel linking with clientPhoneId (no phoneNumberId in channelConfig)
-      expect(mockAgentChannelRepository.findOrCreate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          clientId: 'client-id',
-          channelId: 'channel-id',
-          status: 'active',
-          clientPhoneId: mockClientPhoneId,
-          channelConfig: expect.objectContaining({
-            accessToken: '__REPLACE_ME_ACCESS_TOKEN__'
-          })
-        })
+        expect.objectContaining({ type: 'whatsapp' }),
       );
     });
 
@@ -169,7 +197,48 @@ describe('SeederService', () => {
       expect(loggerSpy).toHaveBeenCalledWith(
         expect.stringContaining('Skipping seeding'),
       );
-      expect(mockClientRepository.create).not.toHaveBeenCalled();
+      expect(mockOnboardingService.registerAndHire).not.toHaveBeenCalled();
+    });
+
+    it('should skip seeding if user already exists (idempotency)', async () => {
+      process.env.NODE_ENV = 'development';
+
+      // Existing user found
+      mockUserRepository.findByEmail.mockResolvedValue({
+        _id: 'existing-user-id',
+        email: 'john.doe@pulsar.com',
+      });
+
+      await service.onApplicationBootstrap();
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('already exists. Skipping seeding'),
+      );
+      expect(mockOnboardingService.registerAndHire).not.toHaveBeenCalled();
+    });
+
+    it('should reuse existing agent if found', async () => {
+      process.env.NODE_ENV = 'development';
+
+      // No existing user
+      mockUserRepository.findByEmail.mockResolvedValue(null);
+      // Existing agent found
+      mockAgentModel.findOne.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({ _id: mockAgentId, name: 'Support Bot' }),
+      });
+
+      await service.onApplicationBootstrap();
+
+      // Agent should not be created
+      expect(mockAgentModel.create).not.toHaveBeenCalled();
+      // Onboarding should still be called with existing agent ID
+      expect(mockOnboardingService.registerAndHire).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentHiring: expect.objectContaining({
+            agentId: mockAgentId.toString(),
+          }),
+        }),
+      );
     });
   });
 });

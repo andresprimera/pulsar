@@ -134,14 +134,9 @@ export class OnboardingService {
       // 10. Resolve Channels and create AgentChannels
       const agentChannels = [];
       for (const channelDto of dto.channels) {
-        // Resolve channel (find or create by name)
-        const channel = await this.channelRepository.findOrCreateByName(
+        // Resolve channel (must exist)
+        const channel = await this.channelRepository.findByNameOrFail(
           channelDto.name,
-          {
-            type: channelDto.type,
-            provider: channelDto.provider || 'custom',
-          },
-          session,
         );
 
         // Extract phoneNumberId from channelConfig and resolve ClientPhone

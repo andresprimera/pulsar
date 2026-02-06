@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model } from 'mongoose';
 import { Channel } from '../schemas/channel.schema';
@@ -12,6 +12,14 @@ export class ChannelRepository {
 
   async findById(id: string): Promise<Channel | null> {
     return this.model.findById(id).exec();
+  }
+
+  async findByNameOrFail(name: string): Promise<Channel> {
+    const channel = await this.model.findOne({ name }).exec();
+    if (!channel) {
+      throw new NotFoundException(`Channel with name "${name}" not found`);
+    }
+    return channel;
   }
 
   async findOrCreateByName(
