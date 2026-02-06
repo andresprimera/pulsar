@@ -10,9 +10,10 @@ import {
   ValidateNested,
   Min,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 class UserDto {
+  @Transform(({ value }) => value?.toLowerCase().trim())
   @IsEmail()
   email: string;
 
