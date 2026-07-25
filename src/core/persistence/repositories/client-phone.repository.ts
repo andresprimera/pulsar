@@ -78,6 +78,18 @@ export class ClientPhoneRepository {
   }
 
   /**
+   * Find ClientPhones for a set of phone numbers (global lookup).
+   * Used to report which platform-owned numbers are already assigned.
+   */
+  async findByPhoneNumbers(phoneNumberIds: string[]): Promise<ClientPhone[]> {
+    if (!phoneNumberIds.length) {
+      return [];
+    }
+    const canonical = phoneNumberIds.map(normalizeToE164);
+    return this.model.find({ phoneNumberId: { $in: canonical } }).exec();
+  }
+
+  /**
    * Find a ClientPhone by its ID.
    */
   async findById(

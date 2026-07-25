@@ -32,6 +32,22 @@ When a channel config has **no credentials** (or invalid/incomplete credentials)
 |----------|-------------|
 | `WHATSAPP_TWILIO_ACCOUNT_SID` | Twilio account SID (auth only; routing identifier always from DB, never from env) |
 | `WHATSAPP_TWILIO_AUTH_TOKEN` | Twilio auth token (auth only; routing identifier always from DB, never from env) |
+| `WHATSAPP_TWILIO_VALIDATE_SIGNATURE` | Set to `true` to enforce `X-Twilio-Signature` validation outside production. Always enforced in production. |
+
+In the platform-owned model (Pulsar owns the Twilio account and assigns one number
+per client), these two variables are the only Twilio credentials needed: each client's
+channel config stores just `provider: twilio` and its assigned `phoneNumberId`.
+
+## Public base URL
+
+| Variable | Description |
+|----------|-------------|
+| `PUBLIC_BASE_URL` | Public origin of this server, e.g. `https://api.example.com` |
+
+Required in production. Twilio computes its webhook signature over the exact public
+URL it was configured with, which proxied request headers cannot be trusted to
+reproduce. The same value is used when provisioning numbers so the URL Twilio is
+pointed at and the URL used to verify signatures always match.
 
 ### Instagram
 

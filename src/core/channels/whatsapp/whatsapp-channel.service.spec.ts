@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Logger } from '@nestjs/common';
+import { ForbiddenException, Logger } from '@nestjs/common';
 import { ChannelProvider } from '@domain/channels/channel-provider.enum';
 import { ChannelEnvService } from '@channels/config/channel-env.service';
 import { WhatsAppChannelService } from './whatsapp-channel.service';
@@ -313,7 +313,7 @@ describe('WhatsAppChannelService', () => {
   });
 
   describe('idempotency', () => {
-    it('ignores duplicate webhook with same messageId', async () => {
+    it('delegates deduplication to the orchestrator rather than filtering in-memory', async () => {
       mockAdapter.parseInbound.mockReturnValue({
         phoneNumberId: 'phone123',
         senderId: '1234567890',
@@ -325,7 +325,7 @@ describe('WhatsAppChannelService', () => {
       await service.handleIncoming(createPayload(), ChannelProvider.Meta);
       await service.handleIncoming(createPayload(), ChannelProvider.Meta);
 
-      expect(orchestrator.handle).toHaveBeenCalledTimes(1);
+      expect(orchestrator.handle).toHaveBeenCalledTimes(2);
     });
 
     it('processes messages with different messageIds', async () => {
@@ -348,6 +348,98 @@ describe('WhatsAppChannelService', () => {
       await service.handleIncoming(createPayload(), ChannelProvider.Meta);
 
       expect(orchestrator.handle).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('sendTemplate', () => {
+    it('sends the template through the provider using env credential fallback', async () => {
+      const twilioAdapter: jest.Mocked<WhatsAppProviderAdapter> = {
+        provider: ChannelProvider.Twilio,
+        parseInbound: jest.fn(),
+        sendMessage: jest.fn(),
+        sendTemplate: jest.fn().mockResolvedValue(undefined),
+      };
+      providerRouter.resolve.mockReturnValue(twilioAdapter);
+      channelEnvService.getWhatsAppTwilioCredentials.mockReturnValue({
+        accountSid: 'AC123',
+        authToken: 'env-token',
+      });
+
+      await service.sendTemplate({
+        to: '+15551234567',
+        template: { templateId: 'HX123', variables: { '1': 'Ada' } },
+        provider: ChannelProvider.Twilio,
+        credentials: undefined,
+        routeChannelIdentifier: '+14155238886',
+      });
+
+      expect(twilioAdapter.sendTemplate).toHaveBeenCalledWith(
+        '+15551234567',
+        { templateId: 'HX123', variables: { '1': 'Ada' } },
+        expect.objectContaining({
+          phoneNumberId: '+14155238886',
+          accountSid: 'AC123',
+          authToken: 'env-token',
+        }),
+      );
+    });
+
+    it('throws when the provider has no template support', async () => {
+      providerRouter.resolve.mockReturnValue(mockAdapter);
+
+      await expect(
+        service.sendTemplate({
+          to: '+15551234567',
+          template: { templateId: 'HX123' },
+          provider: ChannelProvider.Meta,
+          credentials: encryptedCredentials,
+        }),
+      ).rejects.toThrow(/does not support template messages/);
+    });
+  });
+
+  describe('verifyInboundSignature', () => {
+    const context = {
+      url: 'https://api.example.com/whatsapp/webhook/twilio',
+      signature: 'sig123',
+      payload: { MessageSid: 'SM123' },
+    };
+
+    it('passes through for providers without a signing scheme', () => {
+      expect(() =>
+        service.verifyInboundSignature(ChannelProvider.Meta, context),
+      ).not.toThrow();
+    });
+
+    it('throws ForbiddenException when the provider rejects the signature', () => {
+      const twilioAdapter: jest.Mocked<WhatsAppProviderAdapter> = {
+        provider: ChannelProvider.Twilio,
+        parseInbound: jest.fn(),
+        sendMessage: jest.fn(),
+        verifyInboundSignature: jest.fn().mockReturnValue(false),
+      };
+      providerRouter.resolve.mockReturnValue(twilioAdapter);
+
+      expect(() =>
+        service.verifyInboundSignature(ChannelProvider.Twilio, context),
+      ).toThrow(ForbiddenException);
+    });
+
+    it('accepts when the provider validates the signature', () => {
+      const twilioAdapter: jest.Mocked<WhatsAppProviderAdapter> = {
+        provider: ChannelProvider.Twilio,
+        parseInbound: jest.fn(),
+        sendMessage: jest.fn(),
+        verifyInboundSignature: jest.fn().mockReturnValue(true),
+      };
+      providerRouter.resolve.mockReturnValue(twilioAdapter);
+
+      expect(() =>
+        service.verifyInboundSignature(ChannelProvider.Twilio, context),
+      ).not.toThrow();
+      expect(twilioAdapter.verifyInboundSignature).toHaveBeenCalledWith(
+        context,
+      );
     });
   });
 });

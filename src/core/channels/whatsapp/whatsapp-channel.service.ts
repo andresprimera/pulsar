@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { IncomingMessageOrchestrator } from '@orchestrator/incoming-message.orchestrator';
 import { IncomingChannelEvent } from '@domain/channels/incoming-channel-event.interface';
 import { CHANNEL_TYPES } from '@domain/channels/channel-type.constants';
 import { ChannelProvider } from '@domain/channels/channel-provider.enum';
 import { ChannelProviderValue } from '@shared/channel-provider.constants';
 import { decryptRecord } from '@shared/crypto.util';
+import { normalizeToE164 } from '@shared/e164.util';
 import {
   ChannelAdapter,
   SendMessageInput,
@@ -17,30 +18,49 @@ import {
   Dialog360Credentials,
   TwilioCredentials,
   WhatsAppProviderCredentials,
+  InboundSignatureContext,
+  WhatsAppTemplateMessage,
 } from './providers/whatsapp-provider.interface';
 
-const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const DEDUP_CLEANUP_INTERVAL_MS = 60 * 1000; // 1 minute
+export interface SendTemplateInput {
+  to: string;
+  template: WhatsAppTemplateMessage;
+  provider?: string;
+  credentials: unknown;
+  /** Routing number from the hire config; enables env credential fallback. */
+  routeChannelIdentifier?: string;
+}
 
 @ChannelAdapterProvider()
 @Injectable()
 export class WhatsAppChannelService implements ChannelAdapter {
   readonly channel = CHANNEL_TYPES.WHATSAPP;
   private readonly logger = new Logger(WhatsAppChannelService.name);
-  private readonly processedMessages = new Map<string, number>();
-  private readonly cleanupInterval: ReturnType<typeof setInterval>;
 
   constructor(
     private readonly incomingMessageOrchestrator: IncomingMessageOrchestrator,
     private readonly providerRouter: WhatsAppProviderRouter,
     private readonly channelEnvService: ChannelEnvService,
-  ) {
-    this.cleanupInterval = setInterval(
-      () => this.evictExpiredEntries(),
-      DEDUP_CLEANUP_INTERVAL_MS,
-    );
-    if (this.cleanupInterval.unref) {
-      this.cleanupInterval.unref();
+  ) {}
+
+  /**
+   * Rejects inbound webhooks that fail the provider's signature scheme.
+   * Providers without a signing scheme are accepted unchanged.
+   */
+  verifyInboundSignature(
+    provider: ChannelProviderValue,
+    context: InboundSignatureContext,
+  ): void {
+    const adapter = this.providerRouter.resolve(provider);
+    if (!adapter.verifyInboundSignature) {
+      return;
+    }
+
+    if (!adapter.verifyInboundSignature(context)) {
+      this.logger.warn(
+        `[WhatsApp/${provider}] Rejected webhook with invalid signature`,
+      );
+      throw new ForbiddenException('Invalid webhook signature');
     }
   }
 
@@ -69,6 +89,29 @@ export class WhatsAppChannelService implements ChannelAdapter {
     await adapter.sendMessage(input.to, input.message, credentials);
   }
 
+  /**
+   * Sends an approved template, the only outbound form permitted once the 24h
+   * customer service window has closed.
+   */
+  async sendTemplate(input: SendTemplateInput): Promise<void> {
+    const provider = (input.provider ??
+      ChannelProvider.Meta) as ChannelProviderValue;
+    const adapter = this.providerRouter.resolve(provider);
+
+    if (!adapter.sendTemplate) {
+      throw new Error(
+        `[WhatsApp/${provider}] Provider does not support template messages.`,
+      );
+    }
+
+    const credentials = this.resolveCredentialsOrThrow(
+      input.credentials,
+      provider,
+      input.routeChannelIdentifier,
+    );
+    await adapter.sendTemplate(input.to, input.template, credentials);
+  }
+
   async handleIncoming(
     payload: unknown,
     provider: ChannelProviderValue,
@@ -77,13 +120,6 @@ export class WhatsAppChannelService implements ChannelAdapter {
     const parsed = adapter.parseInbound(payload);
 
     if (!parsed) {
-      return;
-    }
-
-    if (this.isDuplicate(parsed.messageId)) {
-      this.logger.log(
-        `[WhatsApp/${provider}] Duplicate webhook ignored messageId=${parsed.messageId}`,
-      );
       return;
     }
 
@@ -141,23 +177,6 @@ export class WhatsAppChannelService implements ChannelAdapter {
           event.channelIdentifier
         }: ${error instanceof Error ? error.message : String(error)}`,
       );
-    }
-  }
-
-  private isDuplicate(messageId: string): boolean {
-    if (this.processedMessages.has(messageId)) {
-      return true;
-    }
-    this.processedMessages.set(messageId, Date.now());
-    return false;
-  }
-
-  private evictExpiredEntries(): void {
-    const cutoff = Date.now() - DEDUP_TTL_MS;
-    for (const [id, timestamp] of this.processedMessages) {
-      if (timestamp < cutoff) {
-        this.processedMessages.delete(id);
-      }
     }
   }
 
@@ -250,10 +269,12 @@ export class WhatsAppChannelService implements ChannelAdapter {
     if (!decrypted) {
       return undefined;
     }
-    const phoneNumberId = decrypted.phoneNumberId;
-    if (!phoneNumberId || typeof phoneNumberId !== 'string') {
+    const storedPhoneNumberId = decrypted.phoneNumberId;
+    if (!storedPhoneNumberId || typeof storedPhoneNumberId !== 'string') {
       return undefined;
     }
+    // Credentials written before normalization was enforced may hold a raw number.
+    const phoneNumberId = normalizeToE164(storedPhoneNumberId);
     if (provider === ChannelProvider.Dialog360) {
       const apiKey = decrypted.apiKey || decrypted.accessToken;
       if (!apiKey || typeof apiKey !== 'string') {

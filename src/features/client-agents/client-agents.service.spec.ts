@@ -425,6 +425,50 @@ describe('ClientAgentsService', () => {
       );
     });
 
+    it('normalizes phoneNumberId to E.164 on the channel and in stored credentials', async () => {
+      mockClientsService.findById.mockResolvedValue(mockClient);
+      mockAgentsService.findOne.mockResolvedValue(mockAgent);
+      mockClientAgentRepository.findByClientAndAgent.mockResolvedValue(null);
+      mockChannelRepository.findByIdOrFail.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439013',
+        name: 'WhatsApp',
+        supportedProviders: ['twilio'],
+      });
+      mockClientPhoneRepository.resolveOrCreate.mockResolvedValue({} as any);
+      mockClientAgentRepository.create.mockResolvedValue(mockClientAgent);
+
+      const dto = {
+        ...baseDto,
+        channels: [
+          {
+            ...baseDto.channels[0],
+            provider: 'twilio',
+            credentials: { phoneNumberId: '14155238886' },
+          },
+        ],
+      };
+
+      await service.create(dto as any);
+
+      expect(mockClientPhoneRepository.resolveOrCreate).toHaveBeenCalledWith(
+        baseDto.clientId,
+        '+14155238886',
+        { provider: 'twilio' },
+      );
+      expect(mockClientAgentRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channels: [
+            expect.objectContaining({
+              phoneNumberId: '+14155238886',
+              credentials: expect.objectContaining({
+                phoneNumberId: '+14155238886',
+              }),
+            }),
+          ],
+        }),
+      );
+    });
+
     it('should allow re-hiring archived agent relationship', async () => {
       mockClientsService.findById.mockResolvedValue(mockClient);
       mockAgentsService.findOne.mockResolvedValue(mockAgent);

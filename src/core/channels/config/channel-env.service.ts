@@ -90,6 +90,19 @@ export class ChannelEnvService {
   }
 
   /**
+   * Public base URL this server is reachable at (e.g. https://api.example.com).
+   * Infrastructure config, not a credential: providers that sign webhooks sign the
+   * exact public URL, which cannot be trusted from proxied request headers.
+   */
+  getPublicBaseUrl(): string | undefined {
+    const baseUrl = process.env.PUBLIC_BASE_URL?.trim();
+    if (!baseUrl) {
+      return undefined;
+    }
+    return baseUrl.replace(/\/+$/, '');
+  }
+
+  /**
    * Returns true if any env var for WhatsApp Meta is set (used by validator).
    */
   hasAnyWhatsAppMetaEnv(): boolean {

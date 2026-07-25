@@ -217,6 +217,35 @@ export class ClientAgentRepository {
     return this.model.findByIdAndUpdate(id, update, { new: true }).exec();
   }
 
+  /**
+   * Points one embedded channel at a phone number.
+   * Uses a positional $set so the write cannot clobber sibling credential fields,
+   * which are select:false and therefore absent from a read-modify-write cycle.
+   */
+  async setChannelPhoneNumber(
+    clientAgentId: Types.ObjectId | string,
+    channelId: Types.ObjectId | string,
+    phoneNumberId: string,
+    encryptedPhoneNumberId: string,
+  ): Promise<ClientAgent | null> {
+    const canonical = normalizeToE164(phoneNumberId);
+    const channelObjectId =
+      typeof channelId === 'string' ? new Types.ObjectId(channelId) : channelId;
+
+    return this.model
+      .findOneAndUpdate(
+        { _id: clientAgentId, 'channels.channelId': channelObjectId },
+        {
+          $set: {
+            'channels.$.phoneNumberId': canonical,
+            'channels.$.credentials.phoneNumberId': encryptedPhoneNumberId,
+          },
+        },
+        { new: true },
+      )
+      .exec();
+  }
+
   /** Ensures channel.phoneNumberId is stored as E.164 (single place for persistence format). */
   private normalizeChannelPhoneNumbers(
     data: Partial<ClientAgent>,

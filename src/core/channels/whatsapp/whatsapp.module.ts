@@ -6,6 +6,7 @@ import { WhatsAppProviderRouter } from './provider-router';
 import { MetaWhatsAppAdapter } from './providers/meta.adapter';
 import { Dialog360WhatsAppAdapter } from './providers/dialog360.adapter';
 import { TwilioWhatsAppAdapter } from './providers/twilio.adapter';
+import { TwilioNumberProvisioningService } from './providers/twilio-provisioning.service';
 
 @Module({
   imports: [OrchestratorModule],
@@ -14,9 +15,10 @@ import { TwilioWhatsAppAdapter } from './providers/twilio.adapter';
     MetaWhatsAppAdapter,
     Dialog360WhatsAppAdapter,
     TwilioWhatsAppAdapter,
+    TwilioNumberProvisioningService,
     WhatsAppProviderRouter,
     WhatsAppChannelService,
   ],
-  exports: [WhatsAppChannelService],
+  exports: [WhatsAppChannelService, TwilioNumberProvisioningService],
 })
 export class WhatsappModule {}
