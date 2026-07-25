@@ -272,8 +272,8 @@ export class ClientAgentsService {
       let telegramWebhookSecretHex: string | undefined;
       // Outbound sends read the number back out of credentials, so the stored
       // copy must match the canonical routing form.
-      let credentialsToStore = {
-        ...channelConfig.credentials,
+      let credentialsToStore: Record<string, unknown> = {
+        ...(channelConfig.credentials ?? {}),
         ...(phoneNumberId ? { phoneNumberId } : {}),
       };
       if (channel.type === 'telegram') {
