@@ -15,6 +15,7 @@ import { ChannelPricesController } from '../../src/features/channel-prices/chann
 import { PersonalitiesController } from '../../src/features/personalities/personalities.controller';
 import { OnboardingController } from '../../src/features/onboarding/onboarding.controller';
 import { InboxController } from '../../src/features/inbox/inbox.client.controller';
+import { WhatsappNumbersController } from '../../src/features/whatsapp-numbers/whatsapp-numbers.controller';
 
 import { WhatsappController } from '../../src/core/channels/whatsapp/whatsapp.controller';
 import { TelegramController } from '../../src/core/channels/telegram/telegram.controller';
@@ -48,6 +49,7 @@ export const CONTROLLER_REGISTRY: ReadonlyArray<Type<unknown>> = [
   PersonalitiesController,
   OnboardingController,
   InboxController,
+  WhatsappNumbersController,
   WhatsappController,
   TelegramController,
   TiktokController,
