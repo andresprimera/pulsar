@@ -4,6 +4,7 @@ import { WhatsappNumbersService } from './whatsapp-numbers.service';
 import { SearchNumbersDto } from './dto/search-numbers.dto';
 import { ProvisionNumberDto } from './dto/provision-number.dto';
 import { AssignNumberDto } from './dto/assign-number.dto';
+import { ConfigureWebhookDto } from './dto/configure-webhook.dto';
 
 /**
  * Admin ops API for platform-owned Twilio WhatsApp numbers.
@@ -37,5 +38,11 @@ export class WhatsappNumbersController {
   @Post('assign')
   assign(@Body() dto: AssignNumberDto) {
     return this.whatsappNumbersService.assign(dto);
+  }
+
+  @Roles('super_admin')
+  @Post('configure-webhook')
+  configureWebhook(@Body() dto: ConfigureWebhookDto) {
+    return this.whatsappNumbersService.configureWebhook(dto.phoneNumber);
   }
 }

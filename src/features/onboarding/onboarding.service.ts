@@ -22,7 +22,7 @@ import { AgentPriceRepository } from '@persistence/repositories/agent-price.repo
 import { ChannelPriceRepository } from '@persistence/repositories/channel-price.repository';
 import { ClientPhoneRepository } from '@persistence/repositories/client-phone.repository';
 import { encryptRecord, encrypt } from '@shared/crypto.util';
-import { normalizeToE164 } from '@shared/e164.util';
+import { normalizeRoutingIdentifier } from '@shared/e164.util';
 import {
   deriveTelegramWebhookSecret,
   isValidTelegramBotTokenShape,
@@ -318,7 +318,10 @@ export class OnboardingService {
         }
 
         if (phoneNumberId) {
-          phoneNumberId = normalizeToE164(phoneNumberId);
+          phoneNumberId = normalizeRoutingIdentifier(
+            normalizedProvider,
+            phoneNumberId,
+          );
         }
 
         const needsRoutingId =

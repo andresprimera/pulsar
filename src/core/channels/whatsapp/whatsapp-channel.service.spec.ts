@@ -398,6 +398,70 @@ describe('WhatsAppChannelService', () => {
     });
   });
 
+  describe('sendMessage (gateway path)', () => {
+    it('sends a platform-owned Twilio number using env auth', async () => {
+      const twilioAdapter: jest.Mocked<WhatsAppProviderAdapter> = {
+        provider: ChannelProvider.Twilio,
+        parseInbound: jest.fn(),
+        sendMessage: jest.fn().mockResolvedValue(undefined),
+      };
+      providerRouter.resolve.mockReturnValue(twilioAdapter);
+      channelEnvService.getWhatsAppTwilioCredentials.mockReturnValue({
+        accountSid: 'AC123',
+        authToken: 'env-token',
+      });
+
+      // A hire assigned a platform-owned number stores only the number.
+      await service.sendMessage({
+        to: '+15551234567',
+        message: 'Hi',
+        provider: ChannelProvider.Twilio,
+        credentials: { phoneNumberId: encrypt('+14155238886') },
+      });
+
+      expect(twilioAdapter.sendMessage).toHaveBeenCalledWith(
+        '+15551234567',
+        'Hi',
+        {
+          phoneNumberId: '+14155238886',
+          accountSid: 'AC123',
+          authToken: 'env-token',
+        },
+      );
+    });
+
+    it('keeps a Cloud API phone_number_id verbatim', async () => {
+      channelEnvService.getWhatsAppMetaCredentials.mockReturnValue({
+        accessToken: 'env-token',
+      });
+
+      await service.sendMessage({
+        to: '+15551234567',
+        message: 'Hi',
+        provider: ChannelProvider.Meta,
+        credentials: { phoneNumberId: encrypt('109384756012345') },
+      });
+
+      // A `+` prefix here would corrupt the Graph resource path.
+      expect(mockAdapter.sendMessage).toHaveBeenCalledWith(
+        '+15551234567',
+        'Hi',
+        { phoneNumberId: '109384756012345', accessToken: 'env-token' },
+      );
+    });
+
+    it('throws when no routing identifier can be resolved', async () => {
+      await expect(
+        service.sendMessage({
+          to: '+15551234567',
+          message: 'Hi',
+          provider: ChannelProvider.Meta,
+          credentials: { accessToken: encrypt('wa-token') },
+        }),
+      ).rejects.toThrow(/No routing identifier/);
+    });
+  });
+
   describe('verifyInboundSignature', () => {
     const context = {
       url: 'https://api.example.com/whatsapp/webhook/twilio',

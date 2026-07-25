@@ -30,6 +30,7 @@ describe('TwilioNumberProvisioningService', () => {
     delete process.env.WHATSAPP_TWILIO_AUTH_TOKEN;
     delete process.env.PUBLIC_BASE_URL;
     delete process.env.WHATSAPP_TWILIO_API_BASE_URL;
+    delete process.env.WHATSAPP_TWILIO_MESSAGING_API_BASE_URL;
   });
 
   describe('getInboundWebhookUrl', () => {
@@ -116,7 +117,7 @@ describe('TwilioNumberProvisioningService', () => {
         sid: 'PN123',
         phoneNumber: '+14155238886',
         friendlyName: 'Acme',
-        inboundWebhookUrl: 'https://api.example.com/whatsapp/webhook/twilio',
+        smsWebhookUrl: 'https://api.example.com/whatsapp/webhook/twilio',
       });
     });
   });
@@ -167,9 +168,102 @@ describe('TwilioNumberProvisioningService', () => {
           sid: 'PN123',
           phoneNumber: '+14155238886',
           friendlyName: 'Acme',
+          smsWebhookUrl: 'https://api.example.com/whatsapp/webhook/twilio',
+        },
+      ]);
+    });
+  });
+
+  describe('findOwnedNumber', () => {
+    it('queries Twilio for the single number', async () => {
+      fetchSpy.mockResolvedValue(
+        mockJsonResponse({
+          incoming_phone_numbers: [
+            { sid: 'PN123', phone_number: '+14155238886' },
+          ],
+        }),
+      );
+
+      const result = await service.findOwnedNumber('14155238886');
+
+      const [url] = fetchSpy.mock.calls[0];
+      expect(url).toContain('PhoneNumber=%2B14155238886');
+      expect(result?.sid).toBe('PN123');
+    });
+
+    it('returns undefined when the account does not own the number', async () => {
+      fetchSpy.mockResolvedValue(
+        mockJsonResponse({ incoming_phone_numbers: [] }),
+      );
+
+      await expect(
+        service.findOwnedNumber('+14155230000'),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('WhatsApp senders', () => {
+    it('lists senders from the Messaging API and strips the whatsapp prefix', async () => {
+      fetchSpy.mockResolvedValue(
+        mockJsonResponse({
+          senders: [
+            {
+              sid: 'XE123',
+              sender_id: 'whatsapp:+14155238886',
+              status: 'ONLINE',
+              webhook: {
+                callback_url: 'https://api.example.com/whatsapp/webhook/twilio',
+              },
+            },
+          ],
+        }),
+      );
+
+      const result = await service.listWhatsAppSenders();
+
+      const [url] = fetchSpy.mock.calls[0];
+      expect(url).toBe(
+        'https://messaging.twilio.com/v2/Channels/Senders?Channel=whatsapp&PageSize=100',
+      );
+      expect(result).toEqual([
+        {
+          sid: 'XE123',
+          phoneNumber: '+14155238886',
+          status: 'ONLINE',
           inboundWebhookUrl: 'https://api.example.com/whatsapp/webhook/twilio',
         },
       ]);
+    });
+
+    it('points a sender webhook at this server with a JSON body', async () => {
+      fetchSpy.mockResolvedValue(
+        mockJsonResponse({
+          sid: 'XE123',
+          sender_id: 'whatsapp:+14155238886',
+          status: 'ONLINE',
+          webhook: {
+            callback_url: 'https://api.example.com/whatsapp/webhook/twilio',
+          },
+        }),
+      );
+
+      const result = await service.configureSenderWebhook('XE123');
+
+      const [url, init] = fetchSpy.mock.calls[0];
+      expect(url).toBe(
+        'https://messaging.twilio.com/v2/Channels/Senders/XE123',
+      );
+      expect(init.method).toBe('POST');
+      expect(init.headers['Content-Type']).toBe('application/json');
+      expect(JSON.parse(init.body)).toEqual({
+        webhook: {
+          callback_url: 'https://api.example.com/whatsapp/webhook/twilio',
+          callback_method: 'POST',
+        },
+      });
+      expect(result.inboundWebhookUrl).toBe(
+        'https://api.example.com/whatsapp/webhook/twilio',
+      );
     });
   });
 

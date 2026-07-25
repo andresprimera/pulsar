@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ChannelEnvService } from '@channels/config/channel-env.service';
+import { stripWhatsAppPrefix } from '@channels/whatsapp/utils/whatsapp-address.util';
 import { normalizeToE164 } from '@shared/e164.util';
 
 /** Inbound webhook path Twilio numbers are pointed at. */
@@ -17,6 +18,22 @@ export interface ProvisionedTwilioNumber {
   sid: string;
   phoneNumber: string;
   friendlyName: string;
+  /**
+   * The number's SMS webhook. Named for what it is: Twilio does NOT deliver
+   * inbound WhatsApp here — see `TwilioWhatsAppSender.inboundWebhookUrl`.
+   */
+  smsWebhookUrl?: string;
+}
+
+/**
+ * A WhatsApp sender registered on a platform-owned number. Twilio delivers
+ * inbound WhatsApp to the sender's callback URL, so this — not the phone
+ * number's SMS webhook — decides whether messages reach Pulsar.
+ */
+export interface TwilioWhatsAppSender {
+  sid: string;
+  phoneNumber: string;
+  status?: string;
   inboundWebhookUrl?: string;
 }
 
@@ -42,6 +59,14 @@ interface TwilioIncomingNumberResource {
   sms_url?: string;
 }
 
+interface TwilioSenderResource {
+  sid?: string;
+  /** `whatsapp:+15017122661` */
+  sender_id?: string;
+  status?: string;
+  webhook?: { callback_url?: string };
+}
+
 /**
  * Twilio REST calls that provision platform-owned numbers.
  *
@@ -52,11 +77,15 @@ interface TwilioIncomingNumberResource {
 export class TwilioNumberProvisioningService {
   private readonly logger = new Logger(TwilioNumberProvisioningService.name);
   private readonly apiBaseUrl: string;
+  private readonly messagingApiBaseUrl: string;
 
   constructor(private readonly channelEnvService: ChannelEnvService) {
     this.apiBaseUrl =
       process.env.WHATSAPP_TWILIO_API_BASE_URL ||
       'https://api.twilio.com/2010-04-01';
+    this.messagingApiBaseUrl =
+      process.env.WHATSAPP_TWILIO_MESSAGING_API_BASE_URL ||
+      'https://messaging.twilio.com';
   }
 
   /**
@@ -117,7 +146,74 @@ export class TwilioNumberProvisioningService {
     );
   }
 
-  /** Buys a number and points it at this server in a single step. */
+  /** Single-number ownership lookup, used before binding a number to a hire. */
+  async findOwnedNumber(
+    phoneNumber: string,
+  ): Promise<ProvisionedTwilioNumber | undefined> {
+    const { accountSid } = this.requireCredentials();
+    const canonical = normalizeToE164(phoneNumber);
+    const query = new URLSearchParams({ PhoneNumber: canonical });
+    const response = await this.request<{
+      incoming_phone_numbers?: TwilioIncomingNumberResource[];
+    }>(
+      'GET',
+      `/Accounts/${accountSid}/IncomingPhoneNumbers.json?${query.toString()}`,
+    );
+
+    const match = (response.incoming_phone_numbers ?? []).find(
+      (number) => normalizeToE164(number.phone_number ?? '') === canonical,
+    );
+    return match ? this.toProvisionedNumber(match) : undefined;
+  }
+
+  /** WhatsApp senders registered in the platform account. */
+  async listWhatsAppSenders(limit = 100): Promise<TwilioWhatsAppSender[]> {
+    const response = await this.requestMessagingJson<{
+      senders?: TwilioSenderResource[];
+    }>('GET', `/v2/Channels/Senders?Channel=whatsapp&PageSize=${limit}`);
+
+    return (response.senders ?? []).map((sender) =>
+      this.toWhatsAppSender(sender),
+    );
+  }
+
+  async findWhatsAppSender(
+    phoneNumber: string,
+  ): Promise<TwilioWhatsAppSender | undefined> {
+    const canonical = normalizeToE164(phoneNumber);
+    const senders = await this.listWhatsAppSenders();
+    return senders.find((sender) => sender.phoneNumber === canonical);
+  }
+
+  /**
+   * Repoints a registered WhatsApp sender at this server. Inbound WhatsApp is
+   * delivered to the sender's callback URL, so this is what makes a
+   * platform-owned number reachable by Pulsar.
+   */
+  async configureSenderWebhook(
+    senderSid: string,
+  ): Promise<TwilioWhatsAppSender> {
+    const callbackUrl = this.getInboundWebhookUrl();
+
+    this.logger.log(
+      `Pointing Twilio WhatsApp sender sid=${senderSid} at ${callbackUrl}`,
+    );
+    const response = await this.requestMessagingJson<TwilioSenderResource>(
+      'POST',
+      `/v2/Channels/Senders/${senderSid}`,
+      { webhook: { callback_url: callbackUrl, callback_method: 'POST' } },
+    );
+
+    return this.toWhatsAppSender(response);
+  }
+
+  /**
+   * Buys a number and points its SMS webhook at this server.
+   *
+   * This does NOT make the number reachable over WhatsApp: that requires a
+   * registered WhatsApp sender whose callback URL points here
+   * (`configureSenderWebhook`).
+   */
   async purchaseNumber(
     phoneNumber: string,
     friendlyName?: string,
@@ -145,7 +241,7 @@ export class TwilioNumberProvisioningService {
     return this.toProvisionedNumber(response);
   }
 
-  /** Repoints an already-owned number at this server's webhook. */
+  /** Repoints an already-owned number's SMS webhook at this server. */
   async configureInboundWebhook(
     phoneNumberSid: string,
   ): Promise<ProvisionedTwilioNumber> {
@@ -176,7 +272,20 @@ export class TwilioNumberProvisioningService {
       sid: resource.sid ?? '',
       phoneNumber: normalizeToE164(resource.phone_number ?? ''),
       friendlyName: resource.friendly_name ?? '',
-      inboundWebhookUrl: resource.sms_url,
+      smsWebhookUrl: resource.sms_url,
+    };
+  }
+
+  private toWhatsAppSender(
+    resource: TwilioSenderResource,
+  ): TwilioWhatsAppSender {
+    return {
+      sid: resource.sid ?? '',
+      phoneNumber: normalizeToE164(
+        stripWhatsAppPrefix(resource.sender_id ?? ''),
+      ),
+      status: resource.status,
+      inboundWebhookUrl: resource.webhook?.callback_url,
     };
   }
 
@@ -195,22 +304,45 @@ export class TwilioNumberProvisioningService {
     path: string,
     body?: URLSearchParams,
   ): Promise<T> {
+    return this.send<T>(method, `${this.apiBaseUrl}${path}`, body);
+  }
+
+  /** Senders live on the Messaging API host and speak JSON, not form bodies. */
+  private async requestMessagingJson<T>(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: Record<string, unknown>,
+  ): Promise<T> {
+    return this.send<T>(
+      method,
+      `${this.messagingApiBaseUrl}${path}`,
+      body === undefined ? undefined : JSON.stringify(body),
+      { 'Content-Type': 'application/json' },
+    );
+  }
+
+  private async send<T>(
+    method: 'GET' | 'POST',
+    url: string,
+    body?: URLSearchParams | string,
+    extraHeaders?: Record<string, string>,
+  ): Promise<T> {
     const { accountSid, authToken } = this.requireCredentials();
     const basicAuth = Buffer.from(
       `${accountSid}:${authToken}`,
       'utf8',
     ).toString('base64');
 
-    const response = await fetch(`${this.apiBaseUrl}${path}`, {
+    const response = await fetch(url, {
       method,
-      headers: { Authorization: `Basic ${basicAuth}` },
+      headers: { Authorization: `Basic ${basicAuth}`, ...extraHeaders },
       body,
     });
 
     if (!response.ok) {
       const errorBody = await response.text();
       this.logger.error(
-        `Twilio provisioning call failed ${method} ${path} status=${response.status} body=${errorBody}`,
+        `Twilio provisioning call failed ${method} ${url} status=${response.status} body=${errorBody}`,
       );
       throw new Error(`Twilio provisioning API error: ${response.status}`);
     }

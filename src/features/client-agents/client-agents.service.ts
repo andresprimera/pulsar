@@ -19,7 +19,7 @@ import { AgentPriceRepository } from '@persistence/repositories/agent-price.repo
 import { ChannelPriceRepository } from '@persistence/repositories/channel-price.repository';
 import { PersonalityRepository } from '@persistence/repositories/personality.repository';
 import { encryptRecord } from '@shared/crypto.util';
-import { normalizeToE164 } from '@shared/e164.util';
+import { normalizeRoutingIdentifier } from '@shared/e164.util';
 import {
   deriveTelegramWebhookSecret,
   isValidTelegramBotTokenShape,
@@ -237,7 +237,8 @@ export class ClientAgentsService {
         channelConfig.credentials &&
         'phoneNumberId' in channelConfig.credentials
       ) {
-        phoneNumberId = normalizeToE164(
+        phoneNumberId = normalizeRoutingIdentifier(
+          normalizedProvider,
           channelConfig.credentials.phoneNumberId,
         );
       }

@@ -469,6 +469,45 @@ describe('ClientAgentsService', () => {
       );
     });
 
+    it('keeps a Cloud API phone_number_id verbatim in stored credentials', async () => {
+      mockClientsService.findById.mockResolvedValue(mockClient);
+      mockAgentsService.findOne.mockResolvedValue(mockAgent);
+      mockClientAgentRepository.findByClientAndAgent.mockResolvedValue(null);
+      mockChannelRepository.findByIdOrFail.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439013',
+        name: 'WhatsApp',
+        supportedProviders: ['meta'],
+      });
+      mockClientPhoneRepository.resolveOrCreate.mockResolvedValue({} as any);
+      mockClientAgentRepository.create.mockResolvedValue(mockClientAgent);
+
+      const dto = {
+        ...baseDto,
+        channels: [
+          {
+            ...baseDto.channels[0],
+            provider: 'meta',
+            credentials: { phoneNumberId: '109384756012345' },
+          },
+        ],
+      };
+
+      await service.create(dto as any);
+
+      // Meta addresses a WABA by an opaque id; a `+` would break Graph calls.
+      expect(mockClientAgentRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channels: [
+            expect.objectContaining({
+              credentials: expect.objectContaining({
+                phoneNumberId: '109384756012345',
+              }),
+            }),
+          ],
+        }),
+      );
+    });
+
     it('should allow re-hiring archived agent relationship', async () => {
       mockClientsService.findById.mockResolvedValue(mockClient);
       mockAgentsService.findOne.mockResolvedValue(mockAgent);

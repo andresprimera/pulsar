@@ -38,6 +38,12 @@ describe('WhatsappNumbersService', () => {
             searchAvailableNumbers: jest.fn(),
             listOwnedNumbers: jest.fn(),
             purchaseNumber: jest.fn(),
+            findOwnedNumber: jest
+              .fn()
+              .mockResolvedValue({ sid: 'PN1', phoneNumber: '+14155238886' }),
+            listWhatsAppSenders: jest.fn().mockResolvedValue([]),
+            findWhatsAppSender: jest.fn().mockResolvedValue(undefined),
+            configureSenderWebhook: jest.fn(),
             getInboundWebhookUrl: jest
               .fn()
               .mockReturnValue(
@@ -57,6 +63,7 @@ describe('WhatsappNumbersService', () => {
           useValue: {
             findById: jest.fn(),
             setChannelPhoneNumber: jest.fn(),
+            findActiveByPhoneNumberId: jest.fn().mockResolvedValue([]),
           },
         },
       ],
@@ -68,6 +75,7 @@ describe('WhatsappNumbersService', () => {
     clientAgentRepository = module.get(ClientAgentRepository);
 
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation();
   });
 
   afterEach(() => {
@@ -75,19 +83,27 @@ describe('WhatsappNumbersService', () => {
   });
 
   describe('listInventory', () => {
-    it('annotates owned numbers with assignment and webhook state', async () => {
+    it('reports webhook state from the WhatsApp sender, not the SMS webhook', async () => {
       twilioProvisioning.listOwnedNumbers.mockResolvedValue([
         {
           sid: 'PN1',
           phoneNumber: '+14155238886',
           friendlyName: 'Assigned',
-          inboundWebhookUrl: 'https://api.example.com/whatsapp/webhook/twilio',
+          smsWebhookUrl: 'https://api.example.com/whatsapp/webhook/twilio',
         },
         {
           sid: 'PN2',
           phoneNumber: '+14155230000',
           friendlyName: 'Spare',
-          inboundWebhookUrl: 'https://stale.example.com/old',
+          smsWebhookUrl: 'https://api.example.com/whatsapp/webhook/twilio',
+        },
+      ]);
+      twilioProvisioning.listWhatsAppSenders.mockResolvedValue([
+        {
+          sid: 'XE1',
+          phoneNumber: '+14155238886',
+          status: 'ONLINE',
+          inboundWebhookUrl: 'https://api.example.com/whatsapp/webhook/twilio',
         },
       ]);
       clientPhoneRepository.findByPhoneNumbers.mockResolvedValue([
@@ -100,14 +116,63 @@ describe('WhatsappNumbersService', () => {
         expect.objectContaining({
           phoneNumber: '+14155238886',
           assignedClientId: 'client-1',
+          whatsAppSenderSid: 'XE1',
+          whatsAppSenderStatus: 'ONLINE',
           webhookConfigured: true,
         }),
+        // Owned and SMS-configured, but no WhatsApp sender: unreachable.
         expect.objectContaining({
           phoneNumber: '+14155230000',
           assignedClientId: undefined,
+          whatsAppSenderSid: undefined,
           webhookConfigured: false,
         }),
       ]);
+    });
+
+    it('reports false when the sender points somewhere else', async () => {
+      twilioProvisioning.listOwnedNumbers.mockResolvedValue([
+        { sid: 'PN1', phoneNumber: '+14155238886', friendlyName: 'Assigned' },
+      ]);
+      twilioProvisioning.listWhatsAppSenders.mockResolvedValue([
+        {
+          sid: 'XE1',
+          phoneNumber: '+14155238886',
+          inboundWebhookUrl: 'https://stale.example.com/old',
+        },
+      ]);
+
+      const [entry] = await service.listInventory();
+
+      expect(entry.webhookConfigured).toBe(false);
+    });
+  });
+
+  describe('configureWebhook', () => {
+    it('points the registered sender at this server', async () => {
+      twilioProvisioning.findWhatsAppSender.mockResolvedValue({
+        sid: 'XE1',
+        phoneNumber: '+14155238886',
+      });
+      twilioProvisioning.configureSenderWebhook.mockResolvedValue({
+        sid: 'XE1',
+        phoneNumber: '+14155238886',
+        inboundWebhookUrl: 'https://api.example.com/whatsapp/webhook/twilio',
+      });
+
+      await service.configureWebhook('14155238886');
+
+      expect(twilioProvisioning.configureSenderWebhook).toHaveBeenCalledWith(
+        'XE1',
+      );
+    });
+
+    it('rejects a number without a registered sender', async () => {
+      twilioProvisioning.findWhatsAppSender.mockResolvedValue(undefined);
+
+      await expect(service.configureWebhook('14155238886')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -207,6 +272,79 @@ describe('WhatsappNumbersService', () => {
 
       await expect(service.assign(dto)).rejects.toThrow(BadRequestException);
       expect(clientPhoneRepository.resolveOrCreate).not.toHaveBeenCalled();
+    });
+
+    it('rejects a number the platform Twilio account does not own', async () => {
+      clientAgentRepository.findById.mockResolvedValue(
+        createClientAgent() as any,
+      );
+      twilioProvisioning.findOwnedNumber.mockResolvedValue(undefined);
+
+      await expect(service.assign(dto)).rejects.toThrow(BadRequestException);
+      expect(clientPhoneRepository.resolveOrCreate).not.toHaveBeenCalled();
+    });
+
+    it('rejects a number already routed to another active hire', async () => {
+      clientAgentRepository.findById.mockResolvedValue(
+        createClientAgent() as any,
+      );
+      clientAgentRepository.findActiveByPhoneNumberId.mockResolvedValue([
+        { _id: new Types.ObjectId().toString(), channels: [] } as any,
+      ]);
+
+      await expect(service.assign(dto)).rejects.toThrow(ConflictException);
+      expect(clientPhoneRepository.resolveOrCreate).not.toHaveBeenCalled();
+    });
+
+    it('rejects a number already routed to another channel on the same hire', async () => {
+      clientAgentRepository.findById.mockResolvedValue(
+        createClientAgent() as any,
+      );
+      clientAgentRepository.findActiveByPhoneNumberId.mockResolvedValue([
+        {
+          _id: clientAgentId,
+          channels: [
+            {
+              channelId: new Types.ObjectId(),
+              phoneNumberId: '+14155238886',
+            },
+          ],
+        } as any,
+      ]);
+
+      await expect(service.assign(dto)).rejects.toThrow(ConflictException);
+    });
+
+    it('allows re-assigning the same number to the same channel', async () => {
+      clientAgentRepository.findById.mockResolvedValue(
+        createClientAgent() as any,
+      );
+      clientAgentRepository.findActiveByPhoneNumberId.mockResolvedValue([
+        {
+          _id: clientAgentId,
+          channels: [{ channelId, phoneNumberId: '+14155238886' }],
+        } as any,
+      ]);
+      clientAgentRepository.setChannelPhoneNumber.mockResolvedValue({
+        _id: clientAgentId,
+      } as any);
+
+      await expect(service.assign(dto)).resolves.toBeDefined();
+    });
+
+    it('still assigns when no WhatsApp sender is registered yet', async () => {
+      clientAgentRepository.findById.mockResolvedValue(
+        createClientAgent() as any,
+      );
+      twilioProvisioning.findWhatsAppSender.mockResolvedValue(undefined);
+      clientAgentRepository.setChannelPhoneNumber.mockResolvedValue({
+        _id: clientAgentId,
+      } as any);
+
+      await expect(service.assign(dto)).resolves.toBeDefined();
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
+        expect.stringContaining('no registered WhatsApp sender'),
+      );
     });
   });
 });
