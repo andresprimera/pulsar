@@ -4,6 +4,7 @@ import { WhatsAppProviderRouter } from './provider-router';
 import { MetaWhatsAppAdapter } from './providers/meta.adapter';
 import { Dialog360WhatsAppAdapter } from './providers/dialog360.adapter';
 import { TwilioWhatsAppAdapter } from './providers/twilio.adapter';
+import { ChannelEnvService } from '@channels/config/channel-env.service';
 
 describe('WhatsAppProviderRouter', () => {
   let router: WhatsAppProviderRouter;
@@ -14,7 +15,7 @@ describe('WhatsAppProviderRouter', () => {
   beforeEach(() => {
     metaAdapter = new MetaWhatsAppAdapter();
     dialog360Adapter = new Dialog360WhatsAppAdapter();
-    twilioAdapter = new TwilioWhatsAppAdapter();
+    twilioAdapter = new TwilioWhatsAppAdapter(new ChannelEnvService());
     router = new WhatsAppProviderRouter(
       metaAdapter,
       dialog360Adapter,

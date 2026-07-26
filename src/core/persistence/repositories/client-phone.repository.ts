@@ -2,7 +2,10 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
 import { ClientPhone } from '@persistence/schemas/client-phone.schema';
-import { normalizeToE164 } from '@shared/e164.util';
+import {
+  normalizeRoutingIdentifier,
+  routingIdentifierLookupValues,
+} from '@shared/e164.util';
 
 export interface CreateClientPhoneData {
   clientId: Types.ObjectId | string;
@@ -30,7 +33,10 @@ export class ClientPhoneRepository {
       typeof data.clientId === 'string'
         ? new Types.ObjectId(data.clientId)
         : data.clientId;
-    const phoneNumberId = normalizeToE164(data.phoneNumberId);
+    const phoneNumberId = normalizeRoutingIdentifier(
+      data.provider,
+      data.phoneNumberId,
+    );
 
     const opts = session ? { session } : {};
     const [doc] = await this.model.create(
@@ -58,11 +64,11 @@ export class ClientPhoneRepository {
   ): Promise<ClientPhone | null> {
     const clientObjectId =
       typeof clientId === 'string' ? new Types.ObjectId(clientId) : clientId;
-    const canonical = normalizeToE164(phoneNumberId);
+    const candidates = routingIdentifierLookupValues(phoneNumberId);
 
     const query = this.model.findOne({
       clientId: clientObjectId,
-      phoneNumberId: canonical,
+      phoneNumberId: { $in: candidates },
     });
     return (session ? query.session(session) : query).exec();
   }
@@ -73,8 +79,22 @@ export class ClientPhoneRepository {
    * This is the enforcement point for cross-client uniqueness.
    */
   async findByPhoneNumber(phoneNumberId: string): Promise<ClientPhone | null> {
-    const canonical = normalizeToE164(phoneNumberId);
-    return this.model.findOne({ phoneNumberId: canonical }).exec();
+    const candidates = routingIdentifierLookupValues(phoneNumberId);
+    return this.model.findOne({ phoneNumberId: { $in: candidates } }).exec();
+  }
+
+  /**
+   * Find ClientPhones for a set of phone numbers (global lookup).
+   * Used to report which platform-owned numbers are already assigned.
+   */
+  async findByPhoneNumbers(phoneNumberIds: string[]): Promise<ClientPhone[]> {
+    if (!phoneNumberIds.length) {
+      return [];
+    }
+    const candidates = [
+      ...new Set(phoneNumberIds.flatMap(routingIdentifierLookupValues)),
+    ];
+    return this.model.find({ phoneNumberId: { $in: candidates } }).exec();
   }
 
   /**
@@ -112,11 +132,17 @@ export class ClientPhoneRepository {
   ): Promise<ClientPhone> {
     const clientObjectId =
       typeof clientId === 'string' ? new Types.ObjectId(clientId) : clientId;
-    const canonical = normalizeToE164(phoneNumberId);
+    const canonical = normalizeRoutingIdentifier(
+      options?.provider,
+      phoneNumberId,
+    );
+    const candidates = routingIdentifierLookupValues(phoneNumberId);
 
     // Pre-check: does this phone already exist?
     // This runs inside the session so it respects the transaction snapshot.
-    const findQuery = this.model.findOne({ phoneNumberId: canonical });
+    const findQuery = this.model.findOne({
+      phoneNumberId: { $in: candidates },
+    });
     const existing = await (options?.session
       ? findQuery.session(options.session)
       : findQuery

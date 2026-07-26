@@ -109,7 +109,10 @@ describe('INBOX_CONVERSATION_WRITE_PORT boundary', () => {
     for (const file of allFiles) {
       const posix = toPosix(file);
       if (posix.endsWith('inbox-conversation-write.adapter.ts')) continue;
-      const relPosix = posix.split('/backend/')[1] ?? posix;
+      // Repo-relative path (src/...), independent of local checkout directory name.
+      const relPosix = toPosix(
+        path.relative(path.resolve(SRC_ROOT, '..'), file),
+      );
       if (ALLOWED_CO_IMPORTERS.has(relPosix)) continue;
       const content = fs.readFileSync(file, 'utf8');
       if (!content.includes('INBOX_CONVERSATION_WRITE_PORT')) continue;

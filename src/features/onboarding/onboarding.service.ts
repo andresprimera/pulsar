@@ -22,6 +22,7 @@ import { AgentPriceRepository } from '@persistence/repositories/agent-price.repo
 import { ChannelPriceRepository } from '@persistence/repositories/channel-price.repository';
 import { ClientPhoneRepository } from '@persistence/repositories/client-phone.repository';
 import { encryptRecord, encrypt } from '@shared/crypto.util';
+import { normalizeRoutingIdentifier } from '@shared/e164.util';
 import {
   deriveTelegramWebhookSecret,
   isValidTelegramBotTokenShape,
@@ -316,6 +317,13 @@ export class OnboardingService {
           }
         }
 
+        if (phoneNumberId) {
+          phoneNumberId = normalizeRoutingIdentifier(
+            normalizedProvider,
+            phoneNumberId,
+          );
+        }
+
         const needsRoutingId =
           channel.type === 'whatsapp' ||
           channel.type === 'instagram' ||
@@ -358,6 +366,9 @@ export class OnboardingService {
           } else {
             credentialsToStore = encryptRecord({
               ...channelConfig.credentials,
+              // Outbound sends read the number back out of credentials, so the
+              // stored copy must match the canonical routing form.
+              ...(phoneNumberId ? { phoneNumberId } : {}),
             });
           }
         }

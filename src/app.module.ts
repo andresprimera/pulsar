@@ -23,6 +23,7 @@ import { AdminAuthModule } from './features/admin-auth/admin-auth.module';
 import { ClientAuthModule } from './features/client-auth/client-auth.module';
 import { AuthorizationModule } from './features/authorization/authorization.module';
 import { InboxModule } from './features/inbox/inbox.module';
+import { WhatsappNumbersModule } from './features/whatsapp-numbers/whatsapp-numbers.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { InboxModule } from './features/inbox/inbox.module';
     ClientAuthModule,
     AuthorizationModule,
     InboxModule,
+    WhatsappNumbersModule,
   ],
 
   controllers: [AppController],

@@ -4,12 +4,20 @@ import {
   WhatsAppProviderAdapter,
   ParsedWhatsAppInbound,
   TwilioCredentials,
+  InboundSignatureContext,
+  WhatsAppTemplateMessage,
+  WhatsAppInboundMedia,
 } from './whatsapp-provider.interface';
 import {
   ensureWhatsAppPrefix,
   normalizeToE164,
   stripWhatsAppPrefix,
 } from '@channels/whatsapp/utils/whatsapp-address.util';
+import {
+  isValidTwilioSignature,
+  toSignatureParams,
+} from '@channels/whatsapp/utils/twilio-signature.util';
+import { ChannelEnvService } from '@channels/config/channel-env.service';
 
 interface TwilioConfig {
   apiBaseUrl: string;
@@ -21,6 +29,7 @@ interface TwilioWebhookPayload {
   To?: string;
   Body?: string;
   NumMedia?: string;
+  [key: string]: unknown;
 }
 
 function isTwilioPayload(payload: unknown): payload is TwilioWebhookPayload {
@@ -33,18 +42,85 @@ function isTwilioPayload(payload: unknown): payload is TwilioWebhookPayload {
   );
 }
 
+/** Twilio delivers attachments as flat MediaUrl0..N / MediaContentType0..N pairs. */
+function extractMedia(payload: TwilioWebhookPayload): WhatsAppInboundMedia[] {
+  const count = Number(payload.NumMedia ?? 0);
+  if (!Number.isFinite(count) || count <= 0) {
+    return [];
+  }
+
+  const media: WhatsAppInboundMedia[] = [];
+  for (let index = 0; index < count; index++) {
+    const url = payload[`MediaUrl${index}`];
+    if (typeof url !== 'string' || !url.trim()) {
+      continue;
+    }
+    const contentType = payload[`MediaContentType${index}`];
+    media.push({
+      url: url.trim(),
+      contentType: typeof contentType === 'string' ? contentType : undefined,
+    });
+  }
+  return media;
+}
+
+/**
+ * The agent pipeline is text-only, so an attachment-only message needs a textual
+ * stand-in. Without one the message would be dropped and the sender ignored.
+ */
+function describeMedia(media: WhatsAppInboundMedia[]): string {
+  const types = media.map((item) => item.contentType ?? 'file');
+  return types.length === 1
+    ? `[Attachment: ${types[0]}]`
+    : `[Attachments: ${types.join(', ')}]`;
+}
+
 @Injectable()
 export class TwilioWhatsAppAdapter implements WhatsAppProviderAdapter {
   readonly provider = ChannelProvider.Twilio;
   private readonly logger = new Logger(TwilioWhatsAppAdapter.name);
   private readonly config: TwilioConfig;
 
-  constructor() {
+  constructor(private readonly channelEnvService: ChannelEnvService) {
     this.config = {
       apiBaseUrl:
         process.env.WHATSAPP_TWILIO_API_BASE_URL ||
         'https://api.twilio.com/2010-04-01',
     };
+  }
+
+  /**
+   * Validates X-Twilio-Signature against the platform Twilio auth token.
+   * Routing is driven by the inbound `To` number, so an unsigned request could
+   * otherwise select any tenant.
+   */
+  verifyInboundSignature(context: InboundSignatureContext): boolean {
+    if (!this.isSignatureValidationEnforced()) {
+      return true;
+    }
+
+    const authToken =
+      this.channelEnvService.getWhatsAppTwilioCredentials()?.authToken;
+    if (!authToken) {
+      this.logger.error(
+        'Cannot validate Twilio webhook signature: WHATSAPP_TWILIO_AUTH_TOKEN is not set.',
+      );
+      return false;
+    }
+
+    return isValidTwilioSignature(
+      authToken,
+      context.url,
+      toSignatureParams(context.payload),
+      context.signature,
+    );
+  }
+
+  private isSignatureValidationEnforced(): boolean {
+    if (process.env.NODE_ENV === 'production') {
+      return true;
+    }
+    return process.env.WHATSAPP_TWILIO_VALIDATE_SIGNATURE?.trim() === 'true';
   }
 
   parseInbound(payload: unknown): ParsedWhatsAppInbound | undefined {
@@ -56,33 +132,29 @@ export class TwilioWhatsAppAdapter implements WhatsAppProviderAdapter {
     const from = payload.From;
     const to = payload.To;
     const body = payload.Body;
-    const numMedia = payload.NumMedia;
 
     if (!messageSid || !from || !to) {
       return undefined;
     }
 
-    // Media-only (no text): not supported yet — ignore
     const bodyEmpty =
       body === undefined || body === null || String(body).trim() === '';
-    const hasMedia = Number(numMedia) > 0;
-    if (bodyEmpty && hasMedia) {
-      return undefined;
-    }
+    const media = extractMedia(payload);
 
-    // Require text for processing
-    if (bodyEmpty) {
+    // Nothing to act on: neither text nor an attachment.
+    if (bodyEmpty && media.length === 0) {
       return undefined;
     }
 
     const phoneNumberId = normalizeToE164(stripWhatsAppPrefix(to));
-    const text = String(body).trim();
+    const text = bodyEmpty ? describeMedia(media) : String(body).trim();
 
     return {
       phoneNumberId,
       senderId: normalizeToE164(stripWhatsAppPrefix(from)),
       messageId: messageSid,
       text,
+      ...(media.length > 0 ? { media } : {}),
     };
   }
 
@@ -91,29 +163,55 @@ export class TwilioWhatsAppAdapter implements WhatsAppProviderAdapter {
     text: string,
     credentials: TwilioCredentials,
   ): Promise<void> {
+    const params = new URLSearchParams();
+    params.append('Body', text);
+
+    await this.postMessage(to, params, credentials);
+  }
+
+  /**
+   * Sends an approved template through Twilio's Content API, which is the only
+   * way to initiate a conversation outside the 24h session window.
+   */
+  async sendTemplate(
+    to: string,
+    template: WhatsAppTemplateMessage,
+    credentials: TwilioCredentials,
+  ): Promise<void> {
+    const params = new URLSearchParams();
+    params.append('ContentSid', template.templateId);
+    if (template.variables && Object.keys(template.variables).length > 0) {
+      params.append('ContentVariables', JSON.stringify(template.variables));
+    }
+
+    await this.postMessage(to, params, credentials, {
+      description: `template ${template.templateId}`,
+    });
+  }
+
+  private async postMessage(
+    to: string,
+    params: URLSearchParams,
+    credentials: TwilioCredentials,
+    options?: { description?: string },
+  ): Promise<void> {
     const url = `${this.config.apiBaseUrl}/Accounts/${credentials.accountSid}/Messages.json`;
     const from = ensureWhatsAppPrefix(credentials.phoneNumberId);
     const toAddress = ensureWhatsAppPrefix(to);
 
-    const params = new URLSearchParams();
     params.append('From', from);
     params.append('To', toAddress);
-    params.append('Body', text);
 
-    this.logger.log(`From=${from}`);
-    this.logger.log(`To=${toAddress}`);
-    this.logger.log(`Body=${text}`);
-    this.logger.log(`Encoded form=${params.toString()}`);
+    this.logger.log(
+      `Sending ${
+        options?.description ?? 'message'
+      } from=${from} to=${toAddress}`,
+    );
 
     const basicAuth = Buffer.from(
       `${credentials.accountSid}:${credentials.authToken}`,
       'utf8',
     ).toString('base64');
-
-    this.logger.log(`Twilio Account SID: ${credentials.accountSid}`);
-    this.logger.log(`Auth token length: ${credentials.authToken?.length}`);
-    this.logger.log(`Basic auth length: ${basicAuth.length}`);
-    this.logger.log(`Request URL: ${url}`);
 
     let response: Response;
     try {

@@ -601,3 +601,94 @@ describe('ClientAgentRepository telegram webhook methods', () => {
     });
   });
 });
+
+describe('ClientAgentRepository phoneNumberId normalization', () => {
+  let repository: ClientAgentRepository;
+  let mockModel: any;
+
+  beforeEach(async () => {
+    mockModel = {
+      create: jest.fn().mockImplementation(async ([data]) => [data]),
+      find: jest.fn(),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ClientAgentRepository,
+        { provide: getModelToken(ClientAgent.name), useValue: mockModel },
+      ],
+    }).compile();
+
+    repository = module.get(ClientAgentRepository);
+  });
+
+  it('keeps a Meta Cloud API phone_number_id verbatim on create', async () => {
+    await repository.create({
+      channels: [
+        {
+          channelId: new Types.ObjectId(),
+          provider: 'meta',
+          phoneNumberId: '109384756012345',
+        },
+      ],
+    } as any);
+
+    expect(mockModel.create).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          channels: [
+            expect.objectContaining({
+              phoneNumberId: '109384756012345',
+            }),
+          ],
+        }),
+      ],
+      {},
+    );
+  });
+
+  it('E.164-normalizes a Twilio number on create', async () => {
+    await repository.create({
+      channels: [
+        {
+          channelId: new Types.ObjectId(),
+          provider: 'twilio',
+          phoneNumberId: '14155238886',
+        },
+      ],
+    } as any);
+
+    expect(mockModel.create).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          channels: [
+            expect.objectContaining({
+              phoneNumberId: '+14155238886',
+            }),
+          ],
+        }),
+      ],
+      {},
+    );
+  });
+
+  it('looks up both raw and E.164-mangled forms of a phoneNumberId', async () => {
+    const exec = jest.fn().mockResolvedValue([]);
+    const select = jest.fn().mockReturnValue({ exec });
+    mockModel.find.mockReturnValue({ select });
+
+    await repository.findActiveByPhoneNumberId('109384756012345');
+
+    expect(mockModel.find).toHaveBeenCalledWith({
+      status: 'active',
+      channels: {
+        $elemMatch: {
+          status: 'active',
+          phoneNumberId: {
+            $in: ['109384756012345', '+109384756012345'],
+          },
+        },
+      },
+    });
+  });
+});

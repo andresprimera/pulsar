@@ -19,6 +19,7 @@ import { AgentPriceRepository } from '@persistence/repositories/agent-price.repo
 import { ChannelPriceRepository } from '@persistence/repositories/channel-price.repository';
 import { PersonalityRepository } from '@persistence/repositories/personality.repository';
 import { encryptRecord } from '@shared/crypto.util';
+import { normalizeRoutingIdentifier } from '@shared/e164.util';
 import {
   deriveTelegramWebhookSecret,
   isValidTelegramBotTokenShape,
@@ -236,7 +237,10 @@ export class ClientAgentsService {
         channelConfig.credentials &&
         'phoneNumberId' in channelConfig.credentials
       ) {
-        phoneNumberId = channelConfig.credentials.phoneNumberId;
+        phoneNumberId = normalizeRoutingIdentifier(
+          normalizedProvider,
+          channelConfig.credentials.phoneNumberId,
+        );
       }
 
       if (phoneNumberId) {
@@ -267,7 +271,12 @@ export class ClientAgentsService {
 
       let telegramBotId: string | undefined;
       let telegramWebhookSecretHex: string | undefined;
-      let credentialsToStore = channelConfig.credentials;
+      // Outbound sends read the number back out of credentials, so the stored
+      // copy must match the canonical routing form.
+      let credentialsToStore: Record<string, unknown> = {
+        ...(channelConfig.credentials ?? {}),
+        ...(phoneNumberId ? { phoneNumberId } : {}),
+      };
       if (channel.type === 'telegram') {
         const botToken = channelConfig.credentials?.botToken;
         if (

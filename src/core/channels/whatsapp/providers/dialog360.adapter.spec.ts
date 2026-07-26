@@ -51,7 +51,7 @@ describe('Dialog360WhatsAppAdapter', () => {
   });
 
   describe('parseInbound', () => {
-    it('delegates to shared Cloud API parser and returns canonical E.164 numbers', () => {
+    it('keeps phone_number_id raw and normalizes the sender to E.164', () => {
       const result = adapter.parseInbound(createPayload());
 
       expect(result).toEqual({
@@ -62,11 +62,11 @@ describe('Dialog360WhatsAppAdapter', () => {
       });
     });
 
-    it('normalizes digits-only phone_number_id to E.164', () => {
+    it('does not E.164-mangle a digits-only phone_number_id', () => {
       const result = adapter.parseInbound(
-        createPayload({ metadata: { phone_number_id: '14155238886' } }),
+        createPayload({ metadata: { phone_number_id: '109384756012345' } }),
       );
-      expect(result?.phoneNumberId).toBe('+14155238886');
+      expect(result?.phoneNumberId).toBe('109384756012345');
     });
 
     it('returns undefined for invalid payload', () => {

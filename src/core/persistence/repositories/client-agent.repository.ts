@@ -15,7 +15,11 @@ import {
   type ClientAgentClientListProjectedField,
   type ClientAgentListProjectedField,
 } from './client-agent.repository.constants';
-import { normalizeToE164 } from '@shared/e164.util';
+import {
+  normalizeRoutingIdentifier,
+  normalizeToE164,
+  routingIdentifierLookupValues,
+} from '@shared/e164.util';
 
 /**
  * Phase 5 — projection returned by `findHiredChannelsForClient`. One
@@ -217,7 +221,40 @@ export class ClientAgentRepository {
     return this.model.findByIdAndUpdate(id, update, { new: true }).exec();
   }
 
-  /** Ensures channel.phoneNumberId is stored as E.164 (single place for persistence format). */
+  /**
+   * Points one embedded channel at a phone number.
+   * Uses a positional $set so the write cannot clobber sibling credential fields,
+   * which are select:false and therefore absent from a read-modify-write cycle.
+   */
+  async setChannelPhoneNumber(
+    clientAgentId: Types.ObjectId | string,
+    channelId: Types.ObjectId | string,
+    phoneNumberId: string,
+    encryptedPhoneNumberId: string,
+  ): Promise<ClientAgent | null> {
+    const canonical = normalizeToE164(phoneNumberId);
+    const channelObjectId =
+      typeof channelId === 'string' ? new Types.ObjectId(channelId) : channelId;
+
+    return this.model
+      .findOneAndUpdate(
+        { _id: clientAgentId, 'channels.channelId': channelObjectId },
+        {
+          $set: {
+            'channels.$.phoneNumberId': canonical,
+            'channels.$.credentials.phoneNumberId': encryptedPhoneNumberId,
+          },
+        },
+        { new: true },
+      )
+      .exec();
+  }
+
+  /**
+   * Canonicalizes channel.phoneNumberId before persistence.
+   * Twilio numbers become E.164; Cloud API providers keep the opaque
+   * `phone_number_id` verbatim — prefixing `+` would break Graph replies.
+   */
   private normalizeChannelPhoneNumbers(
     data: Partial<ClientAgent>,
   ): Partial<ClientAgent> {
@@ -226,7 +263,13 @@ export class ClientAgentRepository {
       ...data,
       channels: data.channels.map((ch) =>
         ch.phoneNumberId
-          ? { ...ch, phoneNumberId: normalizeToE164(ch.phoneNumberId) }
+          ? {
+              ...ch,
+              phoneNumberId: normalizeRoutingIdentifier(
+                ch.provider,
+                ch.phoneNumberId,
+              ),
+            }
           : ch,
       ),
     };
@@ -249,14 +292,15 @@ export class ClientAgentRepository {
   async findActiveByPhoneNumberId(
     phoneNumberId: string,
   ): Promise<ClientAgent[]> {
-    const canonical = normalizeToE164(phoneNumberId);
+    // Match both the canonical write form and any older E.164-mangled Meta ids.
+    const candidates = routingIdentifierLookupValues(phoneNumberId);
     return this.model
       .find({
         status: 'active',
         channels: {
           $elemMatch: {
             status: 'active',
-            phoneNumberId: canonical,
+            phoneNumberId: { $in: candidates },
           },
         },
       })

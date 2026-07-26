@@ -29,7 +29,8 @@ export class Dialog360WhatsAppAdapter implements WhatsAppProviderAdapter {
     if (!parsed) return undefined;
     return {
       ...parsed,
-      phoneNumberId: normalizeToE164(parsed.phoneNumberId),
+      // phone_number_id is a Cloud API resource id, not an MSISDN — leave it raw.
+      phoneNumberId: parsed.phoneNumberId.trim(),
       senderId: normalizeToE164(parsed.senderId),
     };
   }

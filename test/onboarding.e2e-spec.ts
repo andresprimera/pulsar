@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module';
 import { Connection, Types } from 'mongoose';
 import { getConnectionToken } from '@nestjs/mongoose';
 import { loginAsTestAdmin, AdminTestAuth } from './helpers/admin-test-auth';
+import { ensureIndexes } from './helpers/ensure-indexes';
 
 describe('Onboarding (e2e)', () => {
   let app: INestApplication;
@@ -51,6 +52,9 @@ describe('Onboarding (e2e)', () => {
     await app.init();
 
     connection = moduleFixture.get<Connection>(getConnectionToken());
+    // Mongoose autoIndex is async; wait so onboarding transactions do not race
+    // catalog changes ("Unable to write … due to catalog changes").
+    await ensureIndexes(connection);
 
     adminAuth = await loginAsTestAdmin(app, connection);
 
