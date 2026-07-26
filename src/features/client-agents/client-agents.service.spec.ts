@@ -499,6 +499,7 @@ describe('ClientAgentsService', () => {
         expect.objectContaining({
           channels: [
             expect.objectContaining({
+              phoneNumberId: '109384756012345',
               credentials: expect.objectContaining({
                 phoneNumberId: '109384756012345',
               }),

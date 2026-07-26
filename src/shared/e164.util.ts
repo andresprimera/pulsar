@@ -31,5 +31,21 @@ export function normalizeRoutingIdentifier(
   provider: ChannelProviderValue | string | undefined,
   value: string,
 ): string {
-  return routesByPhoneNumber(provider) ? normalizeToE164(value) : value;
+  if (!value || typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return routesByPhoneNumber(provider) ? normalizeToE164(trimmed) : trimmed;
+}
+
+/**
+ * Lookup forms for a routing identifier that may have been stored either raw
+ * (Cloud API `phone_number_id`) or E.164-mangled by an older write path.
+ * Order is not significant; callers use `$in`.
+ */
+export function routingIdentifierLookupValues(value: string): string[] {
+  if (!value || typeof value !== 'string') return [];
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  const e164 = normalizeToE164(trimmed);
+  const withoutPlus = trimmed.startsWith('+') ? trimmed.slice(1) : trimmed;
+  return [...new Set([trimmed, e164, withoutPlus])];
 }
